@@ -200,12 +200,18 @@ capacity:
 	@echo "and under-provisions the narrow one by roughly 10x."
 	@exit 1
 
+# DesignDoc Stage 0.3. Section 20.1: regeneration happens ONLY through this
+# target, never by hand, because the target is what writes the manifest -- and
+# a baseline whose provenance was typed rather than recorded is not provenance.
+#
+# Section 20.1 also requires a baseline regeneration PR to contain ONLY baseline
+# changes, and the reviewable artefact to be a human-readable diff report rather
+# than the parquet: "a PR showing twelve changed binary files gets approved on
+# the strength of a green CI run -- which is circular, because CI compares
+# against the new baselines."
 baseline:
-	@echo "make baseline is DesignDoc Stage 0.3: gen_baseline.py dumping every"
-	@echo "intermediate as parquet with a provenance manifest (3.62). Section"
-	@echo "20.1: regeneration happens ONLY through this target, never by hand,"
-	@echo "because the target is what writes the manifest."
-	@exit 1
+	uv run python scripts/gen_baseline.py
+	uv run python scripts/check_baseline_manifests.py
 
 # ---------------------------------------------------------------------------
 # Everything CI runs, in CI's order. Section 15's ordering constraints are not

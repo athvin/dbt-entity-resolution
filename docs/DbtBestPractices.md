@@ -3456,6 +3456,23 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     *derivation* is the deliverable. A cap nobody can re-derive is the same defect as a `[VERIFIED]` marker
     nobody can re-earn — it looks like a decision and is actually a leftover.
 
+46. **A baseline's manifest should say what the fixture does NOT cover.** §20.1 lists eight provenance
+    fields, all about how the artefact was produced. Generating the real thing surfaced a ninth need.
+    `[RUN]`: `cluster_id` has **zero** nulls over `fake_1000` — Splink's NULL-node rows on dangling edges
+    (`connected_components.py:89-100`) require an edge referencing an absent node, which a `dedupe_only`
+    run over a single table cannot produce. The behaviour is not contradicted; **the condition for it never
+    arises**. Without saying so in the manifest, a green predictions baseline reads as "NULL handling
+    verified" when the path was never entered. `not_exercised_by_this_fixture` is now a required field, and
+    a test asserts its content. Same argument as `pending_subjects.yml`, one layer along: **absence has to
+    be declared, because silence reads as coverage.**
+
+47. **The parquet writer is DuckDB, not pandas, and that is a dependency decision.** `pandas.to_parquet`
+    needs `pyarrow` or `fastparquet`, neither of which is in §4's pin table — and §4's whole point is that
+    the pinned set is small and parity-critical. DuckDB writes parquet natively, is already the engine both
+    sides of every comparison run on, and is therefore the library that reads these files back. Adding a
+    serialisation dependency to write files the pinned engine can write itself would have been the easy
+    default and the wrong one.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`

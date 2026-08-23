@@ -17,7 +17,12 @@ repos:
       # and section 20.1 puts the reviewable artefact in a diff report, not in
       # the parquet.
       - id: check-added-large-files
-        args: [--maxkb=4096]
+        # Section 20.1: "4 MB of binary per file, accepted into git history
+        # permanently, is not a limit anyone chose." Tightened to 512 KiB once
+        # real baselines existed to size it against -- the largest is
+        # predictions.parquet at 137 KiB, so this leaves ~4x headroom while
+        # making a genuinely large binary a conversation.
+        args: [--maxkb=512]
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: end-of-file-fixer
