@@ -1,0 +1,58 @@
+---
+version: 2
+
+seeds:
+  - name: er_fake_1000
+    description: >
+      The vendored reference corpus, seeded so `integration_tests` has a real
+      input relation. Identical bytes to `fixtures/source/fake_1000.csv`, whose
+      manifest carries the full provenance (MIT, MoJ Analytical Services).
+
+
+      The package itself ships ZERO sources (M4b): a consumer names their own
+      relation through `er_input_relation`, and this seed is what plays that
+      role here.
+
+    config:
+      column_types:
+        unique_id: varchar
+        first_name: varchar
+        surname: varchar
+        dob: varchar
+        city: varchar
+        email: varchar
+        cluster: varchar
+
+    meta:
+      # 3.55 / section 20.4. A seed's metadata belongs in its dbt properties
+      # file, not in a second sidecar -- so the PII scan reads the declaration
+      # from here for `seeds/`, and from a `.manifest.yml` everywhere else.
+      synthetic: true
+
+    columns:
+      - name: unique_id
+        description: >
+          The record identifier. Section 2.0 requires VARCHAR, NOT NULL and
+          UNIQUE -- the last because D3's strict `l.uid < r.uid` means two
+          records sharing an id never pair with each other (G9).
+        data_tests: [not_null, unique]
+      - name: first_name
+        description: Given name. ~17% NULL, matching the reference corpus.
+      - name: surname
+        description: Family name. ~18% NULL.
+      - name: dob
+        description: >
+          Date of birth as a string. Never NULL in this corpus, which is what
+          makes `block_on(dob)` the rule that lifted blocking recall from
+          0.5057 to 0.8124 in Stage 0.4.
+        data_tests: [not_null]
+      - name: city
+        description: City of residence. ~19% NULL.
+      - name: email
+        description: Email address on a surname-derived domain. ~21% NULL.
+      - name: cluster
+        description: >
+          Machine-checked ground truth (M12). 251 clusters of size 1-7 giving
+          2,031 within-cluster pairs -- the denominator of every recall figure
+          this project publishes.
+        data_tests: [not_null]

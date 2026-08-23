@@ -29,7 +29,15 @@ disable_noqa = False
 warn_unused_ignores = True
 
 [sqlfluff:templater:dbt]
-project_dir = ./
+# The RUNNABLE project, not the package root (section 5). The package ships
+# ZERO sources by design (M4b), so `er_input_relation` is deliberately empty at
+# the root and `er_stg_input` correctly refuses to compile there (`ER-060`).
+#
+# Linting from the package root therefore lints a project that cannot build --
+# and the fix is not to give the var a fake default, which would be exactly the
+# "inert config that reads as live" defect this repository keeps finding.
+# `integration_tests` supplies the configuration a consumer would.
+project_dir = ./integration_tests
 profiles_dir = ./profiles
 profile = dbt_er
 target = ci

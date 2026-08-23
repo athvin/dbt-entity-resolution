@@ -185,7 +185,8 @@ repos:
         name: "sqlfluff lint (duckdb + dbt templater)"
         entry: >-
           bash -c 'DBT_ER_THRESHOLDS="[{\"auto_merge\":0.9}]"
-          sqlfluff lint --processes 0 --disable-progress-bar models'
+          sqlfluff lint --processes 0 --disable-progress-bar
+          integration_tests/dbt_packages/dbt_er/models'
         language: system
         types: [sql]
         pass_filenames: false

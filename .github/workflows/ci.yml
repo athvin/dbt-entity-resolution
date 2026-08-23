@@ -67,7 +67,11 @@ jobs:
         run: |
           uv run dbt deps --lock --project-dir integration_tests
           git diff --exit-code -- integration_tests/package-lock.yml
-      - run: uv run dbt parse
+      # ONLY the runnable project. The package ships zero sources by design
+      # (M4b), so `er_input_relation` is empty at the root and `er_stg_input`
+      # correctly refuses to compile there (`ER-060`). Section 5 names
+      # `integration_tests/` as "the RUNNABLE project"; the package's own nodes
+      # are all in its manifest because it installs the package.
       - run: uv run dbt parse --project-dir integration_tests
       # `dbt parse` does NOT execute on-run-start hooks, so it does not fire the
       # compile gate -- despite section 2 calling that gate "compile". This step
@@ -76,7 +80,11 @@ jobs:
         run: >-
           uv run dbt run-operation er_assert_project_standards
           --project-dir integration_tests
-      - run: uv run sqlfluff lint models
+      # Through the INSTALLED PACKAGE PATH, not `models/`. sqlfluff resolves a
+      # file by its path relative to `project_dir`, and `models/...` is not a
+      # path the runnable project knows -- it would fall back SILENTLY to the
+      # package root's config and hit `ER-060`.
+      - run: uv run sqlfluff lint integration_tests/dbt_packages/dbt_er/models
              --format github-annotation-native --annotation-level failure
       # SKIP=no-commit-to-branch. That hook guards a DEVELOPER's local commit
       # by checking the CURRENT branch -- and on a push-to-main run the checkout
