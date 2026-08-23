@@ -269,7 +269,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | 3.49 | Every deliberate divergence has both a log entry and a pinning test | `scripts/check_divergence_log.py`, both directions | CI | Non-zero exit |
 | 3.50 | `PARITY.md` names every stage the DAG contains | Same script, comparing stage tags in the manifest against sections | CI | Non-zero exit |
 | 3.51 | The compile gate cannot be disarmed from root config, and cannot brick a consumer | Hardening values live in a package macro, not `vars:` (§2.1); CI asserts `er_standards_enabled` is true | C + CI | Compile failure / job fails |
-| 3.52 | The package creates no relations a consumer did not ask for | CI asserts the package's `data_tests:` block sets no `store_failures_as` and declares no hooks | CI | Job fails |
+| 3.52 | The package creates no relations a consumer did not ask for | CI asserts the package's `data_tests:` block sets no `store_failures_as`, and that the package declares **no `on-run-end` hooks** — `on-run-start: er_assert_project_standards` is required by §2 and is explicitly permitted | CI | Job fails |
 | 3.53 | Column budget: no `_l`/`_r` passthrough unless the debug var is set | Policy macro checks declared columns on the two pair-grain models against `er_retain_matching_columns` | C | `raise_compiler_error` |
 | 3.54 | No build artefact is ever committed | `.gitignore` + a pre-commit hook rejecting staged `target/`, `dbt_packages/`, `*.duckdb` — `.gitignore` alone loses to `git add -f` | P | Hook fails |
 | 3.55 | Fixtures and seeds are synthetic; no secrets, no real person data | `detect-private-key` + a PII heuristic scan over `seeds/`, `fixtures/`, `harness/` | P + CI | Non-zero exit |
@@ -298,24 +298,18 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 > green. Under `warn_error_options: {error: all}` that warning does become an error — which is exactly why
 > 3.21 is load-bearing rather than cosmetic.
 
-> **[REVIEW 2026-08-23] RC33 — On 3.39: its subject files do not exist, and no rule names the canonical
-> copy.** Until the scaffold is rebuilt, the three files 3.39 cross-references (`.pre-commit-config.yaml`,
-> `dbt-bouncer.yml`, `.sqlfluff`) exist only as fenced blocks inside this document (`dbt-bouncer.yml` not
-> even in full — see C.5), so the check has no subject: the same vacuous-pass failure §6.1 diagnoses in
-> `check_yml_pairing.py`'s seed clause. The deeper gap is the handover moment: nothing states which copy is
-> canonical once the files land. Add a one-line rule (here or in §23): every configuration artifact has
-> exactly one canonical home — the repo file, once it exists — and this document thereafter cites it by
-> path, keeping provenance markers, delta tables and rationale. Without it, the doc's `[VERIFIED]` blocks
-> and the live files diverge with no gate watching (3.37 is unenforced by its own admission).
+> **[REVIEW 2026-08-23] Fixed (F18) — RC33's canonical-home rule is now stated in §23**, and Appendix C's
+> header carries its handover half. **3.39 remains inert until the scaffold lands**, because its three
+> subject files do not yet exist — that is not a defect in the rule, it is the state the rebuild changes,
+> and Appendix D's bootstrap order is where it is sequenced.
 
-> **[REVIEW 2026-08-23] RC34 — On 3.52: as worded, it bans the hook this document requires.** "CI asserts
-> the package's `data_tests:` block sets no `store_failures_as` **and declares no hooks**" — hooks cannot
-> be declared inside a `data_tests:` block, so the narrow parse is vacuous, and the plain reading bans the
-> `on-run-start` hook Appendix C.1 declares, which §2 calls "the only gate that travels with the package"
-> and §2.1 hardens rather than removes. The "no hooks" clause presumably means the observability
-> `on-run-end` hooks §14.8 confines to `integration_tests/`. Rescope 3.52 — "declares no hooks other than
-> `er_assert_project_standards`", or "no `on-run-end` hooks" — else the assertion fails forever against a
-> line the same document requires the package to keep.
+> **[REVIEW 2026-08-23] Fixed (F19) — RC34: 3.52 is rescoped to `on-run-end` hooks.** As written it read
+> *"sets no `store_failures_as` **and declares no hooks**"*, which parsed two ways and was wrong both
+> times: hooks cannot be declared inside a `data_tests:` block, so the narrow reading was vacuous, and the
+> plain reading banned the `on-run-start` hook Appendix C.1 declares — the one §2 calls *"the only gate
+> that travels with the package"* and §2.1 hardens rather than removes. The clause meant the observability
+> `on-run-end` hooks §14.8 confines to `integration_tests/`, and now says so. Left unfixed, this assertion
+> would have failed forever against a line the same document requires the package to keep.
 
 > **[REVIEW 2026-08-23] Fixed (F8):** 3.20 read "unit-test coverage on fixed-schema models", with
 > `check_model_has_unit_tests` scoped and the policy macro skipping anything whose `sql_features` says
@@ -325,16 +319,21 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 > Two consequences are carried to the places that encoded the old scope: §18.1's waiver example and
 > Appendix A.1's closing paragraph.
 
-> **[REVIEW 2026-08-23] RC55 — 3.69–3.71 arrive without their `verify_gates.py` injections, which §23
-> requires in the same PR.** §23 is explicit: *"Every new or changed standard states, in the same PR: its
-> mechanism, its gate, and its `verify_gates.py` injection (3.38). A rule without an injection has not been
-> shown to fire."* These three state mechanism and gate and stop there, as does the rescoped 3.20 — whose
-> injection is now materially different, since the violation to inject is *any* model without a unit test
-> rather than a fixed-schema one. Name the four injections before the scaffold rebuild: a model with no
-> `unit_tests:` entry (3.20); a `format: dict` fixture and a `format: sql` fixture with one uncast column
-> (3.69); and a `consumer_smoke/` build asserted to execute zero unit tests (3.71). 3.70 is labelled
-> unenforced and needs none. Note also that 3.69's script is a fourth file in the class RC33 describes —
-> it has no canonical home until the scaffold lands.
+> **[REVIEW 2026-08-23] Fixed (F20) — RC55: the four missing injections are named here**, before the
+> scaffold rebuild rather than after, so `verify_gates.py` is written against a complete list. 3.69–3.71
+> and the rescoped 3.20 stated mechanism and gate and stopped there, against §23's *"a rule without an
+> injection has not been shown to fire."* 3.20's injection is materially different post-D12: the violation
+> to inject is *any* model without a unit test, not a fixed-schema one.
+>
+> | Standard | Inject | Expect |
+> |---|---|---|
+> | **3.20** | A model with no `unit_tests:` entry anywhere in either project root | Compile failure and a bouncer failure, each naming the model — and the message names the fix, not the waiver (C.4 delta 2) |
+> | **3.69** | A fixture declared `format: dict` | Non-zero exit naming the fixture |
+> | **3.69** | A `format: sql` fixture with one column lacking `cast(… as …)` | Non-zero exit naming **the fixture and the column** |
+> | **3.71** | A `consumer_smoke/` build | Zero `unit_test` rows in its `run_results.json`; if dbt does execute them, the documented `--exclude-resource-type unit_test` guard is present and the job asserts that instead |
+>
+> 3.70 is labelled convention (unenforced) and needs none. 3.69's `check_unit_test_fixtures.py` is a fourth
+> file in the class §23's canonical-home rule describes — it has no canonical home until the scaffold lands.
 
 ---
 
@@ -1049,15 +1048,19 @@ Two constraints that decide the whole design:
 - `env_var` has no such bound and — decisively — is available in the schema-YAML context, which is what
   makes the contract above possible at all.
 
-> **[REVIEW 2026-08-23] RC39 — Third full statement of DR-02's mechanism, and one of the three disagrees.**
-> The 128 KiB `MAX_ARG_STRLEN` bound at ~330 levels and the not-`--vars` conclusion both live in
-> `DesignDoc` D1, the registered decision (DR-02), which under §1.1 tier 2 owns the mechanism. A third
-> statement is also live: `DesignDoc` Appendix A M2's note ends "Prefer it; keep `--vars` as the documented
-> CI form", which this block's flat "not `--vars`" contradicts — three statements of one decision is the G1
-> shape at smaller scale. Keep constraints 1–2 above (the schema-YAML rendering behaviour is this section's
-> own subject and was verified here); reduce the ingestion path to "via `env_var`, per D1/DR-02 — the bound
-> and the context argument live there", and let D1 settle whether `--vars` survives as a documented CI form
-> for small fixtures.
+> **[REVIEW 2026-08-23] Fixed (F29) — RC39: the ingestion path is D1/DR-02's, and is not restated here.**
+> Three live statements of one decision is the G1 shape at smaller scale, and one of the three disagreed:
+> `DesignDoc` Appendix A **M2** ends *"Prefer it; keep `--vars` as the documented CI form"*, which this
+> section's flat "not `--vars`" contradicted.
+>
+> **D1 settles it, and `--vars` does not survive even for small fixtures.** The reason is not the size
+> bound — a small fixture would fit — it is constraint 2 above: `SchemaYamlContext` exposes exactly `var`
+> and `env_var`, so a `columns:` leaf can read the derived list either way, but the *emitting* wrapper needs
+> one path, not two. A second documented form is a second thing that can be stale, and `DesignDoc` §8's DoD
+> item 2 is now written against `DBT_ER_MODEL_JSON` specifically. M2's note is superseded on this point.
+>
+> Constraints 1–2 above stay: the schema-YAML rendering behaviour is this section's own subject and was
+> verified here. The bound and the context argument stay in D1.
 
 **Drift guard.** A pytest asserts that `var('er_gamma_columns')` matches exactly what
 `er_comparison_vector_sql` renders for the same model JSON. Without it the contract is merely a *second*
@@ -1159,13 +1162,13 @@ should be written before the second comparison type lands rather than after.
 
 ### 11.1 `.sqlfluff` `[VERIFIED]`
 
-> **[REVIEW 2026-08-23] RC40 — A 130-line as-executed INI in a body section.** Appendix C is this
-> document's own designated home for as-executed configs, and per the no-code rule the design content here
-> is the rule-by-rule rationale (the blocked-words list versus D9's `USING SAMPLE` carve-out, the
-> casting-style choice, the ST05/§7.3/D11 collision) — not the verbatim file. The block is also already
-> scheduled to change: the ST05 note below concedes its premise is false pending B.8. Move the listing
-> beside the other reference configs (or to the repo `.sqlfluff` once Stage 0 lands, cited by path per the
-> "On 3.39" canonical-copy rule) and keep the rationale prose here.
+> **[REVIEW 2026-08-23] Fixed (F25) — RC40 is closed by §23's canonical-home rule and Appendix D.1 step 3.**
+> The listing stays here only until `.sqlfluff` exists as a file; at that point the file is canonical, this
+> section is reduced to its rationale plus a pointer by path, and the block is not copied forward. Moving it
+> to Appendix C first would be a second move for no gain — Appendix C is itself scheduled to reduce to
+> pointers under the same rule. What stays here permanently is the rule-by-rule reasoning that is genuinely
+> design content: the blocked-words list against D9's `USING SAMPLE` carve-out, the casting-style choice,
+> and the ST05 / §7.3 / D11 collision whose premise B.8 has yet to settle.
 
 ```ini
 [sqlfluff]
@@ -1343,7 +1346,34 @@ models/intermediate/er_int_em_iterations.sql
 The cap matters more than the exemption. An ignore file with no ceiling becomes the place failures go to
 be forgotten.
 
-> **[REVIEW 2026-08-23] RC41 — `er_int_em_iterations` matches no model in either document.** `DesignDoc` §2
+#### 11.2 deltas required before the rebuild `[UNVERIFIED]`
+
+The block above is kept **as executed**, per §0. These are the changes to apply when the file is recreated.
+
+| # | Change | Driver |
+|---|---|---|
+| 1 | `models/intermediate/er_int_em_iterations.sql` → **`models/intermediate/er_train_em.sql`** | RC41 |
+| 2 | The `≤ 2` cap **stands**, and now has slack | RC41, `DesignDoc` §5 Stage 6 |
+
+**Delta 1 (closes RC41).** `er_int_em_iterations` matches no model in either document. `DesignDoc` §2 names
+the EM model `train_em`, and D5 builds EM as a single `WITH RECURSIVE … USING KEY` statement — the
+`_iterations` suffix is the pre-D5 *unrolled* design D5 explicitly killed. The consequence of leaving it is
+not cosmetic in either direction: the real EM model would raise PRS unexempted and **fail lint**, while the
+dead entry consumed one of the two capped slots. The directory is settled as `models/intermediate/` —
+training models produce parameters that scoring consumes; they are neither staging nor a mart.
+
+**Delta 2.** RC41 also asked whether the cap itself survives the inventory, since a third model needing
+`USING KEY` would make the `≤ 2` assertion fail on legitimate content. It survives:
+`er_entity_clusters_1to1` was the candidate third, and `DesignDoc` §5 Stage 6 has since **tagged it v2** —
+`cluster_using_single_best_links` is defined over source datasets, which Stage 12.1's matrix forbids. The
+two exempt models are `er_entity_clusters` and `er_train_em`. If 1:1 clustering is ever un-deferred, the cap
+is raised **in the same PR** with the reason recorded, not quietly.
+
+> **[REVIEW 2026-08-23] Fixed (F23) — RC41 is closed by the delta table above.**
+>
+> <details><summary>Original review note (RC41), retained</summary>
+>
+> **RC41 — `er_int_em_iterations` matches no model in either document.** `DesignDoc` §2
 > names the EM model `train_em` (`er_train_em` shipped), and its D5 builds EM as one
 > `WITH RECURSIVE … USING KEY` statement — "_iterations" is the pre-D5 unrolled design D5 explicitly
 > killed. Training is also `DesignDoc` Stage 9, so `models/intermediate/` is at least undecided.
@@ -1352,6 +1382,8 @@ be forgotten.
 > check the cap itself against the inventory: if `er_entity_clusters_1to1` needs `USING KEY` for its
 > mutual-best-link iteration, three models need the exemption and the ≤ 2 assertion fails on legitimate
 > content.
+>
+> </details>
 
 ### 11.3 The non-determinism lint — the one nothing else does `[VERIFIED]`
 
@@ -1402,13 +1434,14 @@ The two tiers are the point. A single blunt ban would have forced the observabil
 legitimately need `invocation_id` and `env_var` — to be exempted wholesale, taking the `set()` ban with
 them. Comment lines are skipped so prose explaining the ban does not trip it.
 
-> **[REVIEW 2026-08-23] RC42 — The excerpted constants will drift; the design won't.** The two-tier design
-> and its justification are this document's content; the concrete regex dictionaries and especially
-> `EXEMPT_RUN_CONTEXT` are the script's. That allowlist is the one part guaranteed to churn — every new
-> observability macro edits it, and each edit will happen in `scripts/check_no_nondeterminism.py` (3.16),
-> not here. When the script lands, keep the tier rationale and one illustrative entry per tier, and state
-> that the authoritative sets live in the script: a stale allowlist quoted here is worse than none, because
-> it tells a reviewer an exemption exists (or doesn't) with the confidence of a `[VERIFIED]` block.
+> **[REVIEW 2026-08-23] Fixed (F26) — RC42 is closed by §23's canonical-home rule.** The two-tier design and
+> its justification are this document's content; the regex dictionaries — and especially
+> `EXEMPT_RUN_CONTEXT` — are the script's, and that allowlist is the one part guaranteed to churn, because
+> every new observability macro edits it and every edit happens in `scripts/check_no_nondeterminism.py`
+> (3.16). **When the script lands, this section keeps the tier rationale and one illustrative entry per
+> tier, and states that the authoritative sets live in the script.** A stale allowlist quoted here is worse
+> than none: it tells a reviewer an exemption exists, or does not, with the confidence of a `[VERIFIED]`
+> block.
 
 ### 11.4 YAML, Python and the rules deliberately turned off `[VERIFIED]`
 
@@ -1954,7 +1987,7 @@ The exposure is measured, not theoretical: `[RECON]` 21.1 s and 5.3 GB for stage
 | # | Requirement |
 |---|---|
 | a | **`er_run_id`** (ULID) stamped as a column on every materialised model |
-| b | **`_er_run_manifest`** carrying run id, `sha256(model JSON)`, `er_tf_snapshot_id`, threshold, resolved dbt / dbt-duckdb / duckdb / splink versions, per-stage row counts and wall time |
+| b | **`_er_run_manifest`** carrying run id, `sha256(model JSON)`, `er_tf_snapshot_id`, threshold, resolved dbt / dbt-duckdb / duckdb / splink / **sqlglot** versions, the **platform triple**, per-stage row counts and wall time |
 | c | An explicit, **written** per-model idempotency key — what makes whole-stage restart safe |
 | d | A five-value **exit-code taxonomy**: parity failed / precondition failed / infra failed / nothing to do / success. `DesignDoc` Stage 11 and M12 both branch on it |
 | e | Named owners for `PARITY.md` and `divergence-log.md` (§5's `CODEOWNERS`) |
@@ -2257,9 +2290,16 @@ attaches the diff report." That was the whole policy, and it names an artefact w
 
 Storage is parquet, per `DesignDoc` Stage 0.3 — and note this interacts with Appendix B.1's open decision,
 since option (a) makes both sides of every comparator parquet. Every baseline carries a sidecar
-`*.manifest.yml` with Splink version, model-JSON sha256, generator seed, DuckDB version, date and producing
-commit; 3.62 asserts it. Regeneration happens only through a `make` target that writes that manifest, never
-by hand.
+`*.manifest.yml` with Splink version, model-JSON sha256, generator seed, DuckDB version, **sqlglot
+version**, **the platform triple** `(os, architecture, DuckDB build)`, date and producing commit; 3.62
+asserts it. Regeneration happens only through a `make` target that writes that manifest, never by hand.
+
+The last two fields are not bookkeeping. **sqlglot**, not Splink, decides which comparison levels receive a
+TF adjustment (`DesignDoc` A.2 C2, G11), and it arrives transitively — a baseline generated under a
+different sqlglot is a different baseline with no visible difference. **The platform triple** exists because
+`DesignDoc` Appendix A measured "exact bit equality" in-process on darwin arm64 while these baselines are
+compared on linux/amd64 in CI (G5, §22.1); a manifest that cannot say which platform produced a baseline
+cannot support the parity claim built on it.
 
 **The reviewable artefact is a human-readable diff report, not the parquet.** Row counts, changed-cell counts
 by column, min/max deltas, worst-N rows. A PR showing twelve changed binary files gets approved on the
@@ -2391,6 +2431,18 @@ breaks every cross-reference in the file, and this document cross-references hea
 
 Every new or changed standard states, in the same PR: its **mechanism**, its **gate**, and its
 **`verify_gates.py` injection** (3.38). A rule without an injection has not been shown to fire.
+
+**Every configuration artifact has exactly one canonical home, and once the repository file exists, it is
+the canonical one.** This document thereafter cites it **by path**, keeping the provenance marker, the
+delta ledger and the rationale — never a second copy of the content. `[VERIFIED]` describes a file at a
+path, not a fenced block in a document.
+
+Without that rule, Appendix C's keep-as-executed convention and the live files diverge with nothing
+watching: 3.39 cross-references `.pre-commit-config.yaml`, `dbt-bouncer.yml` and `.sqlfluff`, and while
+those exist only as fenced blocks here the check **has no subject** — the same vacuous-pass failure §6.1
+diagnoses in `check_yml_pairing.py`'s seed clause. 3.69's `check_unit_test_fixtures.py` is a fourth file in
+that class. The rule is what makes 3.39 mean something after the scaffold lands, and Appendix C's handover
+rule is its other half. *(Closes RC33.)*
 
 **A removed rule must state why the failure it prevented is no longer possible.** This is the requirement
 that stops quiet erosion, and it is the one most likely to be skipped, because removing a rule always feels
@@ -2532,7 +2584,16 @@ harness *inside* the dbt process via a plugin or `on-run-end` hook, never as a s
 `profiles.yml` in Appendix C uses a file path, which is option (b) without the in-process harness — so this
 must be settled before the harness lands. **Recommendation: (a).**
 
-> **[REVIEW 2026-08-23] RC45 — B.1's deadline reaches no ordering artifact.** "Settled before the harness
+> **[REVIEW 2026-08-23] Fixed (F28) — RC45's ordering half is closed; the register row lands with B.1.**
+> B.1 now reaches ordering artifacts in three places: `DesignDoc` §5 **Stage 0.0 step 4** sequences it
+> explicitly *before* the scaffold rebuild touches `profiles.yml`, §5 **Stage 0.3** carries "Blocked by
+> B.1 / DR-13", and Appendix D.1's sequence puts `profiles.yml` in step 1 — which is precisely why the
+> decision cannot wait. **Still open:** DR-13 carries no "blocks Stage 0.3" marker in `DesignDoc` §B.3.
+> That is a register edit and lands with the decision itself.
+>
+> <details><summary>Original review note (RC45), retained</summary>
+>
+> **RC45 — B.1's deadline reaches no ordering artifact.** "Settled before the harness
 > lands" makes this the earliest-deadline open decision in the programme: the harness is a `DesignDoc`
 > Stage 0.3 deliverable, and §12.7 wants the comparator suite even before 0.4 freezes baselines. Yet
 > `DesignDoc`'s register carries DR-13 as plain OPEN, without the "blocks …" marker its sibling DR-09 has,
@@ -2540,6 +2601,8 @@ must be settled before the harness lands. **Recommendation: (a).**
 > DR-13 marked to match — otherwise the C.3 `profiles.yml` this appendix already flags as option-(b)-shaped
 > gets rebuilt verbatim during scaffolding and B.1 is resolved by drift, which this appendix's header
 > forbids.
+>
+> </details>
 
 **B.2 — Thresholds as a var or a dimension (DesignDoc M16).** `var('er_threshold')` builds one partition per
 run; a `thresholds` relation cross-joined with a composite `USING KEY (thr, unique_id)` produces all of them
@@ -2567,6 +2630,10 @@ the observability database as a 14-day artefact and never restores it. Options: 
 prior artefact at job start — simplest, bounded by artefact retention; (b) commit a trend summary to a
 branch; (c) push to external storage. (b) and (c) need write permissions, which interacts with 3.56.
 **Recommendation: (a)**, and reword §14.6 to state which runs the median covers.
+**Sequencing: B.7 closes before this one.** Every option here makes the observability artefact accumulate
+across runs, and B.7 is about that artefact carrying raw `query_sql` with literal attribute values —
+deciding B.6 first turns a single-run exposure into an accumulating one (§14.10, C.7 delta 8, RC52).
+**Blocks:** B.5, which has no trailing median to calibrate against until this resolves, and C.7 delta 8.
 
 **B.8 — ST05 under the CTE ban (v2.1).** §7.3 bans non-recursive CTEs; §11.1's `forbid_subquery_in = both`
 forbids the FROM-clause subquery that `DesignDoc` D11 rec 4 mandates; repeating the expression is rejected on
@@ -2606,17 +2673,18 @@ Copy-pasteable. Provenance marked per file.
 > none has been run. Editing a verified block in place would destroy the only thing §0 says the document
 > must not smooth away: the difference between "this works" and "this should work."
 
-> **[REVIEW 2026-08-23] RC47 — Appendix C is the largest code payload in either design doc, and it needs a
-> handover rule.** ~700 lines of copy-pasteable configuration plus a ~170-line Jinja macro sit here, against
-> the standing rule that these documents hold code briefly and by reference. The cause is recorded in
-> Appendix D: deleting the scaffold "so this document could stand alone" forced the full text in. C.5 shows
-> the by-reference form — and currently dangles for exactly that reason (RC50). When the repository is
-> scaffolded, land C.1–C.7 as real files and reduce each section to its provenance marker, the pointer, and
-> the delta ledger: the deltas, not the blocks, are what this document uniquely records, and the blocks
-> belong under the gates §3 builds to watch them. Pair this with the canonical-copy rule proposed at the
-> "On 3.39" note under §3 — once a repo file exists, it is canonical and the doc cites it by path; without
-> that rule the keep-as-executed convention above guarantees divergence from the live files, with 3.37
-> (unenforced, by this document's own admission) as the only thing watching.
+> **The handover rule (normative).** This appendix holds ~700 lines of configuration plus a ~170-line Jinja
+> macro because Appendix D records that the scaffold was deleted *"so this document could stand alone"* —
+> not because a design document should carry code. **When each file lands in the repository, this section
+> reduces to three things: its provenance marker, a pointer to the file by path, and its delta ledger.**
+> The deltas are what this document uniquely records; the blocks belong under the gates §3 builds to watch
+> them. C.5 already shows the by-reference form, and currently dangles for exactly that reason (RC50).
+>
+> This rule is load-bearing rather than tidy. The keep-as-executed convention above is correct while the
+> files do not exist and becomes a guarantee of divergence the moment they do — with 3.37, unenforced by
+> this document's own admission, as the only thing watching. §23's canonical-home rule is its other half.
+>
+> *(Closes RC47.)*
 
 ### C.1 `dbt_project.yml` — the package `[VERIFIED — as executed, v1 form]`
 
@@ -2778,7 +2846,18 @@ Deltas 10 and 11 are the two that change shape rather than values, and both are 
 makes the gate un-disarmable from root config, 11 is what stops the package writing relations into a
 warehouse that did not ask for them.
 
-> **[REVIEW 2026-08-23] RC48 — Deltas 1, 4 and 6 point at the wrong destination.** They are written as
+> **On deltas 1, 4 and 6 — read them with delta 10, not as `vars:` edits (closes RC48).** The values those
+> three produce — `er_allowed_materializations: ["table"]`, `er_must_carry_constraints`, and the per-check
+> `er_standards_exempt` mapping — are precisely the three §2.1 names as **hardening values**, and delta 10
+> relocates hardening values **out of `vars:`** into a package-owned macro root configuration cannot reach.
+> Their final home is the macro. Applied as a checklist and stopped at the `vars:` block, deltas 1, 4 and 6
+> leave all three consumer-reachable, which is the exact disarm §2.1 exists to prevent: a consumer sets
+> `er_allowed_materializations: ["view"]` in their own `dbt_project.yml`, every DDL constraint in the
+> project silently becomes inert, and their build stays green.
+>
+> <details><summary>Original review note (RC48), retained</summary>
+>
+> **RC48 — Deltas 1, 4 and 6 point at the wrong destination.** They are written as
 > in-place `vars:` edits to the three values §2.1's hardening row names as "**Not** read from `var()`;
 > defined in a package-owned macro" (`er_allowed_materializations`, `er_must_carry_constraints`, the
 > exemption list), and §18.1 calls the corrected exemption "a hardening value rather than a policy var" —
@@ -2786,11 +2865,14 @@ warehouse that did not ask for them.
 > there, deltas 1/4/6 leave all three consumer-reachable — the exact disarm §2.1 describes. State that the
 > values deltas 1, 4 and 6 produce are the "hardening values" delta 10 relocates, and that their final home
 > is the macro, not `vars:`.
+>
+> </details>
 
-> **[REVIEW 2026-08-23] RC-note — 3.52 vs the `on-run-start` hook above.** See the "On 3.52" note under §3's
-> matrix: as worded, 3.52's "declares no hooks" bans the `er_assert_project_standards` hook this block
-> declares and §2 calls "the only gate that reaches their build". No delta here reconciles the two; 3.52
-> needs the carve-out, not this block.
+> **[REVIEW 2026-08-23] Fixed (F24) — the RC-note on 3.52 versus this block's `on-run-start` hook is closed
+> where it belonged.** 3.52 now reads *"declares no `on-run-end` hooks"* and names
+> `er_assert_project_standards` as explicitly permitted, so this block keeps the hook §2 calls *"the only
+> gate that reaches their build"* without needing a delta of its own. The carve-out went in the standard,
+> not in the configuration — see F19 under §3.
 
 ### C.2 `packages.yml` — the shipped surface `[VERIFIED]`
 
@@ -3090,16 +3172,51 @@ enumerates and they are listed unfilled rather than omitted, so the gap is visib
 > table — C.1's delta 10 currently gestures at "a package-owned macro" without any block recording what
 > changes in it.
 
-### C.5 `dbt-bouncer.yml` `[VERIFIED]`
+### C.5 `dbt-bouncer.yml` — **text lost with the scaffold; must be reconstructed and re-verified**
 
-Reproduced in full in the repository; the load-bearing parts are quoted in §3, §6, §7 and §13. Key
-structural points: `dbt_artifacts_dir: integration_tests/target`, `package_name: dbt_er`,
-`custom_checks_dir: ./dbt_bouncer_checks`, `severity: error`, and three tiers
-(`manifest_checks`, `catalog_checks`, `run_results_checks`) run after `dbt parse`, `dbt docs generate` and
-`dbt build` respectively. All three are enabled — affordable precisely because DuckDB is in-process, where a
-cloud-warehouse project would have to skip the catalog tier.
+**This block has no content, and that is the honest statement of it.** The as-executed file was
+`[VERIFIED]`, but it lived in the scaffold Appendix D records as *"built, run, and then deliberately
+removed so this document could stand alone"* — and unlike C.1–C.4, C.6 and C.7, its text was never copied
+in. **It now exists nowhere: not in the repository, not in this document.** The marker is therefore
+downgraded: nothing here has been executed, because there is nothing here.
 
-> **[REVIEW 2026-08-23] RC50 — "Reproduced in full in the repository" is no longer true.** The repository
+That matters beyond the missing file, because three other rules depend on it: 3.39's
+`check_standards_matrix.py` is specified to cross-reference it, §8.3 says the pair-versus-entity grain
+boundary *"is held by the `include:` regexes in `dbt-bouncer.yml`"*, and 3.40 asserts the custom checks
+registered inside it. Each is currently a rule about a file that does not exist.
+
+**What is known about it**, and what the reconstruction is assembled from:
+
+| Property | Value |
+|---|---|
+| `dbt_artifacts_dir` | `integration_tests/target` |
+| `package_name` | `dbt_er` |
+| `custom_checks_dir` | `./dbt_bouncer_checks` |
+| `severity` | `error` |
+| Tiers | `manifest_checks`, `catalog_checks`, `run_results_checks` — run after `dbt parse`, `dbt docs generate` and `dbt build` respectively. **All three enabled**, affordable precisely because DuckDB is in-process where a cloud-warehouse project would have to skip the catalog tier |
+
+Reconstruction sources, in order of authority: **§3's mechanism column**, which names every check by name;
+**§6** and **§6.2** for the 1:1 pairing check and its custom-check registration; **§7** for the
+materialization checks; **§8.3's `include:` regexes**, which carry the grain boundary and are the part
+most easily lost; and **§13's** regex block, the one fenced fragment of this file that survives anywhere.
+
+**One value cannot be reconstructed and must be re-derived rather than guessed:**
+`check_run_results_max_execution_time`'s thresholds. B.5 cites them as *"30s/120s/300s"* and that phrase is
+their only appearance in this document — the numbers themselves were in the deleted file. B.5 also says
+they should be set from the trailing median in `model_perf_trend` once real fixture data exists, and is
+blocked on B.6 for the history to do it. Until then they are absolute-only placeholders, and they are
+labelled as such in the reconstructed file rather than presented as the verified originals.
+
+*(Closes RC50.)*
+
+> **[REVIEW 2026-08-23] Fixed (F21) — RC50 is closed by the rewrite above**, taking its second option: the
+> loss is recorded rather than implied away, and the reconstruction sources are enumerated. C.5 is
+> ironically the by-reference form every other block converges to under the handover rule — it just needs
+> its referent to exist, which Appendix D's bootstrap order now schedules.
+>
+> <details><summary>Original review note (RC50), retained</summary>
+>
+> **RC50 — "Reproduced in full in the repository" is no longer true.** The repository
 > contains only `docs/` and `LICENSE`; Appendix D records that the scaffold holding this file was "built,
 > run, and then deliberately removed so this document could stand alone." C.5 is the one block whose full
 > text was delegated to the deleted scaffold, so the as-executed `[VERIFIED]` `dbt-bouncer.yml` now exists
@@ -3112,6 +3229,8 @@ cloud-warehouse project would have to skip the catalog tier.
 > full in the scaffold (since deleted — Appendix D); reconstruct from the quoted parts in §3, §6, §7 and
 > §13 and re-verify", so the loss is recorded rather than implied away. Ironically C.5 is the by-reference
 > form every other block should converge to (RC47) — it just needs its referent to exist.
+>
+> </details>
 
 ### C.6 `.pre-commit-config.yaml` `[UNVERIFIED]`
 
@@ -3215,20 +3334,21 @@ pre-commit it would either use a stale manifest — a false green — or force a
 | 3 | Tighten `check-added-large-files --maxkb=4096`; 4 MB of binary per file into permanent history is not a limit anyone chose | §20.1 |
 | 4 | New local hooks: `er-standards-matrix` (3.39), `er-verified-markers` (3.44), `er-baseline-manifests` (3.62) | §23, §16, §20.1 |
 | 5 | Add `python-tests` to the lint path so the enforcement scripts are covered by their own suite | 3.57 |
+| 6 | **Drop `files:` from `er-yml-pairing` and `er-no-nondeterminism`.** Both scripts already walk both project roots and both run `pass_filenames: false`, so the filter buys nothing and costs the hook its trigger | 3.1, 3.16, RC51 |
 
 Delta 2 is the one that matters most today: this repository has no `.gitignore` at all, and §15 already
 argues that a stale database is the likeliest false-green — a *committed* one is strictly worse, because it
 is restored on every checkout on every machine, permanently.
 
-> **[REVIEW 2026-08-23] RC51 — The `er-yml-pairing` trigger filter defeats 3.1 at this gate.** With
-> `pass_filenames: false` the `files:` pattern still decides whether the hook runs at all, and
-> `^(models|macros|tests|seeds)/` matches nothing under `integration_tests/` — so a commit touching only
-> `integration_tests/seeds/person_records.csv` (per §6.1, the only seeds the project has) never triggers the
-> hook, however correctly the script walks both roots once invoked. The delta table above fixes neither this
-> filter nor `er-no-nondeterminism`'s `^(models|macros)/` two hooks down, which likewise skips
-> `integration_tests/` models. Widen both patterns to include `integration_tests/`, or drop `files:` on
-> these whole-repo hooks — a gate that cannot trigger is §6.1's "check whose subject has disappeared", one
-> layer up.
+**Delta 6 is the one that is a live defect rather than a hardening (closes RC51).** With
+`pass_filenames: false` the `files:` pattern still decides whether the hook runs at all, and
+`^(models|macros|tests|seeds)/` matches nothing under `integration_tests/`. A commit touching only
+`integration_tests/seeds/person_records.csv` — which §6.1 notes is the only seed the project has — never
+triggers `er-yml-pairing`, however correctly the script walks both roots once invoked.
+`er-no-nondeterminism`'s `^(models|macros)/` skips `integration_tests/` models the same way. Dropping the
+filter is preferred over widening it: these are whole-repo hooks, and a narrowing that has already failed
+once is not worth keeping in a more complicated form. **A gate that cannot trigger is §6.1's "check whose
+subject has disappeared", one layer up.**
 
 ### C.7 `.github/workflows/ci.yml` `[UNVERIFIED]`
 
@@ -3367,22 +3487,26 @@ The `parity`, `determinism` and `project-evaluator` jobs follow the same shape a
 | 5 | Add a toolchain vulnerability scan to `lint` | §15 |
 | 6 | New jobs: `comparator-sensitivity`, `verify-gates`, `python-tests`, `consumer-smoke` — each added to `ci-gate`'s `needs:` | §15 |
 | 7 | Minimum-node-count assertion beside every `--select` | 3.41 |
-| 8 | Restore the prior observability artefact before `build`, per Appendix B.6's resolution | §14.6 |
+| 8 | **BLOCKED — do not apply yet.** Restore the prior observability artefact before `build`, per Appendix B.6's *recommendation* (a). **B.6 is open, and B.7 must close first** | §14.6, B.6, B.7 |
 | 9 | Comment the `GITHUB_ENV` heredoc constraint beside the step | §15 |
 
 Delta 9 is documentation rather than code, and is the cheapest item in this table: the model-JSON injection
 is safe *because* the JSON is repository-controlled, and the next person to wire up a workflow input needs to
 know that is load-bearing rather than incidental.
 
-> **[REVIEW 2026-08-23] RC52 — Delta 8 cites a resolution that does not exist.** "per Appendix B.6's
-> resolution" — B.6 is not resolved. Appendix B opens with "These are genuinely unsettled", B.6 offers
-> options (a)–(c) with "Recommendation: (a)", and this document's convention for a settled item is B.4's
-> explicit "~~Open.~~ Resolved in v2: adopted", which B.6 does not carry. Either mark B.6 resolved (and
-> reword §14.6 per its own instruction to state which runs the median covers) or downgrade this delta to
-> "per B.6's recommendation". Note also the interaction this table skips: restore-then-append makes the
-> observability database accumulate across runs, and B.7 — equally open — is about precisely that artefact
-> carrying raw `query_sql` with attribute values (§14.10, §20.4). Implementing B.6(a) before B.7 is decided
-> widens the egress §14.10 flags, and no delta here addresses it.
+**Delta 8 is the one to leave undone, and the reason is not that B.6 is merely unsettled (closes RC52).**
+This table previously read *"per Appendix B.6's resolution"*, and B.6 has no resolution: Appendix B opens
+with *"These are genuinely unsettled"*, B.6 offers options (a)–(c) with a recommendation, and this
+document's convention for a settled item is B.4's explicit `~~Open.~~ Resolved in v2: adopted`, which B.6
+does not carry. Downgraded to "recommendation" above.
+
+The **ordering** matters more than the wording. Restore-then-append is what makes the observability
+database accumulate across runs — and B.7, equally open, is about precisely that artefact carrying raw
+`query_sql` with literal attribute values into a 14-day retained artifact (§14.10, §20.4). **Applying
+B.6(a) before B.7 is decided widens the exact egress §14.10 flags**, and turns a single-run exposure into
+an accumulating one. B.7 closes first, then B.6, then this delta.
+
+That dependency now belongs to B.6's own row rather than living only here.
 
 ---
 
@@ -3407,16 +3531,83 @@ each gate *fails* when violated but never written. **Plus everything added in v2
 §2.1, §6.1, §7 (the D11 contract), §7.1–7.2, §10.5, §12.7, §13.3, §14.9–14.10, §18.1, standards 3.38–3.66,
 and every Appendix C delta table.
 
-> **[REVIEW 2026-08-23] RC53 — No bootstrap order exists.** This record establishes that nothing described
-> in this document currently exists — the scaffold is deleted, `verify_gates.py` was never written, and
-> everything added in v2 is unverified — but no section states the order in which a greenfield repository
-> stands the machinery back up. Appendix C is copy-pasteable but silent on sequence: which C-deltas must be
-> applied before first run versus which can trail; whether `verify-gates` lands with the first commit when
-> its own CI job is itself C.7 delta 6; what the §2 gates do before any model exists. §23's rule that every
-> §3 row ships with its injection "in the same PR" compounds this: on the bootstrap commit all sixty-eight
-> rows are new at once, which either means one enormous PR or an unstated waiver. A short bootstrap-order
-> note here — or a pointer to the `DesignDoc` Stage 0 task that owns the rebuild, once one exists (see the
-> review note at its §5 Stage 0) — is the missing piece between this document and a first commit.
+> **[REVIEW 2026-08-23] Fixed (F22) — RC53 is closed by D.1 below.** The task that owns the rebuild is now
+> `DesignDoc.md` §5 **Stage 0.9**; D.1 is its sequence, and it answers the four questions RC53 raised: which
+> C-deltas apply before first run, whether `verify-gates` can land with the first commit, what §2's gates do
+> before any model exists, and what §23's same-PR injection rule means when all seventy-one rows are new at
+> once.
+
+### D.1 Bootstrap order `[UNVERIFIED]`
+
+Everything above establishes that **nothing described in this document currently exists**. This section
+states the order in which a greenfield repository stands it back up. `DesignDoc.md` §5 **Stage 0.9** is the
+task that owns the rebuild; this is its sequence.
+
+**What §2's gates do before any model exists: nothing, and that is the problem rather than the answer.**
+The compile gate loops `graph.nodes` filtered to `resource_type == 'model'` and `package_name == 'dbt_er'`;
+with no models it iterates zero times, collects zero violations, and passes. dbt-bouncer's coverage checks
+divide by a node count of zero or skip. **A green run on an empty project is the "zero differences by
+comparing zero rows to zero rows" vacuity §12.7 describes, one layer down.** So step 1 ships **one real
+model**, satisfying the full §8.3 / §10 / §12.2 slice, precisely so every gate has a subject on the commit
+that introduces it. A scaffold whose gates have never had anything to reject is not a verified scaffold.
+
+**Whether `verify-gates` lands with the first commit: no, and it cannot.** Its own CI job is C.7 delta 6,
+and 3.38 requires injecting each violation and asserting **the expected error string** — which needs the
+rules to exist, be wired, and have observed failure text. It lands at step 4, and step 4 is the commit that
+*earns* the scaffold its markers.
+
+#### Waiver B-1 — bootstrap injections
+
+§23 requires every new or changed standard to ship its `verify_gates.py` injection in the same PR. On a
+greenfield repository all seventy-one rows are new across a handful of commits, so satisfying that rule
+literally means either one unreviewable PR or a silent exception. This is the exception, stated:
+
+> **Waiver B-1.** Standards 3.1–3.71 ship without their `verify_gates.py` injections across the bootstrap
+> sequence. **All injections land in the step-4 commit**, which is the commit that adds
+> `scripts/verify_gates.py`. From that commit onward §23 applies unwaived, and a row without an injection
+> fails `verify-gates`.
+> **Scope:** the bootstrap sequence only, per §18's one-legal-way rule.
+> **Expires:** when `verify_gates.py` lands. **Echoed** by the policy macro on every run until it does.
+
+That waiver is the reason the sequence is short. A longer bootstrap is a longer period in which nothing has
+been shown to fire.
+
+#### Which C-deltas apply before first run
+
+| Delta | When | Why |
+|---|---|---|
+| C.1 1, 2, 4, 5, 7, 8, 9, 10, 11 | **Before first run** | Each changes a value or shape the policy macro reads at compile time. Applied later, the first run verifies a configuration that is already superseded |
+| C.1 3 — `er_max_pairs` re-derived | **Trails** to `DesignDoc` Stage 0.6 | It is a *measurement*, and the fixture it measures does not exist yet. Ships as the v1 literal with a comment naming 0.6 as its owner |
+| C.1 6 — `er_standards_exempt` shape | **Before first run** | The macro reads the mapping; the old list shape silently disables the per-check waiver |
+| C.4 1–3 | **Before first run** | They remove the two guards D12 deleted. Shipping the guards and removing them later exempts every model added in between |
+| C.4 4–11 (RC49) | **Before first run**, except 3.53 | These are §2.1's hardening — what makes the gate un-disarmable. 3.53's column budget names the two pair-grain models, so it trails to Stages 4–5 |
+| C.6 1, 2, 3, 5, 6 | **Before first run** | Delta 2 especially: this repository has no `.gitignore` at all, and `.gitignore` alone loses to `git add -f` |
+| C.6 4 — `er-baseline-manifests` | **Trails** to `DesignDoc` Stage 0.3 | No baselines exist to carry a manifest |
+| C.7 1–5, 7, 9 | **Before first run** | Security and determinism properties of the workflow itself. Retrofitting a SHA pin after the workflow has run is a worse position than starting with one |
+| C.7 6 — the eight new jobs | **Trails**, each with the machinery it gates | `parity` needs a harness; `comparator-sensitivity` needs Stage 0.7; `consumer-smoke` needs a published ref |
+| C.7 8 — restore the observability artefact | **Blocked on B.7, then B.6** | Both are open, and applying B.6(a) first widens the §14.10 egress (RC52) |
+| §11.2 deltas 1–2 | **Before first run** | The exemption list names a model that does not exist; left as-is, the real EM model fails lint |
+
+#### The sequence
+
+1. **Toolchain and skeleton.** `uv` project on Python 3.12, `uv.lock` with §4's exact pins, `.gitignore`,
+   §5's layout, `dbt_project.yml` + `packages.yml` + `profiles/profiles.yml` with their before-first-run
+   deltas, `integration_tests/` with its byte-identical `flags:` block — **and one real model**, per the
+   vacuity argument above.
+2. **The Makefile.** §17's six targets with real bodies, plus `make capacity` and the baseline target.
+   §17's *"every Make target is also a CI step"* runs both ways, so this precedes the workflow: a workflow
+   written before the targets it invokes is a workflow nobody can reproduce locally.
+3. **Lint and pre-commit.** `.sqlfluff` and `.sqlfluffignore` moved out of §11 into real files under §23's
+   canonical-home rule, `.yamllint.yml`, `check_no_nondeterminism.py`, `.pre-commit-config.yaml`.
+4. **The four gates.** The policy macro with its deltas, `dbt-bouncer.yml` reconstructed per C.5, the custom
+   check with 3.40's registration assertion, the enforcement scripts with their own failing-case tests
+   (3.57), and `scripts/verify_gates.py` with every injection. **Waiver B-1 expires here.**
+5. **CI.** `.github/workflows/ci.yml` with its before-first-run deltas and the four jobs C.7 specifies. The
+   other eight arrive with the machinery they gate.
+
+**Markers are re-earned, not restored.** Every `[VERIFIED]` block in this document describes a scaffold that
+no longer exists; per §0 and 3.44 each is `[UNVERIFIED]` until re-executed on the §4 pins. Step 5's first
+green run is what re-earns them, and anything that did not run stays marked.
 
 **The scope of the verified markers.** Everything above was executed on dbt-core 1.12.2 · dbt-duckdb 1.11.0 ·
 DuckDB 1.5.5 · dbt-bouncer 3.8.0 · SQLFluff 4.3.0 · yamllint 1.38.0. Per §0 and 3.44, a marker is scoped to
@@ -3494,11 +3685,16 @@ merged, because each needs a decision rather than a drafting pass — B.3 marks 
   address.
 - **G11 — sqlglot is parity-critical and appears on no pin list**, including §4's.
 
-> **[REVIEW 2026-08-23] RC54 — The G11 bullet is now half-stale.** `DesignDoc` Stage 0.1 pins sqlglot
-> ("pin `splink`, `duckdb`, `dbt-core`, `dbt-duckdb` **and `sqlglot`** exactly"), added by the very merge
-> this section records (its §B.5 item 6). What remained true — §4's own table had no sqlglot row — was a
-> one-row drafting fix v2.1 did not make; it is applied in this pass (see the §4 flag). The residue G11
-> still owns: neither §14.9(b)'s run manifest nor §20.1's baseline manifest records a sqlglot version.
+> **[REVIEW 2026-08-23] Fixed (F27) — RC54's residue is closed.** `DesignDoc` Stage 0.1 already pinned
+> sqlglot and §4 gained its row in this pass; the part that remained open was that **neither §14.9(b)'s run
+> manifest nor §20.1's baseline manifest recorded a sqlglot version.** Both now do, and both also gained the
+> **platform triple** G5 needs and RC21 recorded as still missing — the same class of omission, found by the
+> same argument. `DesignDoc` §5 Stage 0.3 carries the matching requirement on the baseline format.
+>
+> **G11's remaining half is not a drafting fix and is recorded at `DesignDoc` §5 Stage 0.1:** sqlglot's
+> resolved *upper* bound comes from `dbt-bouncer` (`>=25,<31`), not from Splink (`>=17.6.0`), so a routine
+> lint-tool bump can move a parity-critical dependency. `dbt-bouncer` joins the exact pins on Dependabot's
+> ignore list for that reason (§16).
 
 The first is the one to take next. The others are drafting; that one is architecture.
 
