@@ -294,6 +294,19 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | | **— v2.3 addition (Appendix D.0 finding 4). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.72 | A `unit_tests:` block is at the **top level** of its properties file, never nested under a `models:` entry | `scripts/check_unit_test_fixtures.py` rejects a `unit_tests` key inside a `models:` entry, in both project roots; the policy macro's 3.20 check catches the consequence | P + CI + C | Non-zero exit naming the file and the model |
 
+| | **— v2.4 addition (§23's canonical-home rule, mechanised). `[VERIFIED]` against the §4 pins. —** | | | |
+| 3.73 | A configuration artifact has exactly one canonical home: no document holds a second copy of a file that exists in the repository | `scripts/check_canonical_homes.py` — a heading naming a live path must not carry a fenced block; short illustrations use a counted `<!-- excerpt: -->` marker | P + CI | Non-zero exit naming the section and the live path |
+
+> **On 3.73 — the rule §23 stated and nothing enforced.** §23 says the canonical-home rule "is what makes
+> 3.39 mean something after the scaffold lands", and then §23's own opening diagnoses why a rule with no
+> mechanism decays: *"mechanisms nothing verified still existed ... is how §7 stayed stale for a revision"*.
+> The rule was prose. Reducing Appendix C once is a cleanup; the duplication regrows silently without
+> something watching, and a reader cannot tell a stale copy from a live file.
+>
+> Its first run found **eight** duplicated artifacts totalling **735 lines** — including §11.1's
+> `.sqlfluff` and §11.2's `.sqlfluffignore`, which RC40 had flagged as living outside Appendix C and which
+> a manual sweep of Appendix C would have missed. That is the argument for the mechanism in one number.
+
 > **On 3.72 — why the consequence is not enough.** D.0 finding 4 measured it: a nested `unit_tests:` block
 > is **silently ignored** by dbt-core 1.12.2. Clean parse, exit 0, no warning. The compile gate does fail —
 > but it fails with *"no unit test"*, pointing at a model whose properties file visibly contains three of
@@ -1191,138 +1204,23 @@ should be written before the second comparison type lands rather than after.
 > design content: the blocked-words list against D9's `USING SAMPLE` carve-out, the casting-style choice,
 > and the ST05 / §7.3 / D11 collision whose premise B.8 has yet to settle.
 
-```ini
-[sqlfluff]
-dialect = duckdb
-templater = dbt
+**Canonical: [`.sqlfluff`](../.sqlfluff).** Per §23 the repository file is canonical; what stays here is
+the rule-by-rule reasoning, which is design content rather than configuration.
 
-# Stated explicitly so NEW upstream rules are opt-OUT. A new rule breaking the
-# build on a version bump is the intended signal, not noise.
-rules = all
+**Why each non-default choice is what it is.** The dialect is `duckdb` and the templater is `dbt`, so
+SQLFluff parses what dbt actually emits. `LT02` indentation is four spaces with `template_blocks_indent`
+on — Jinja blocks are indented with the SQL they generate, which is what makes a `{% for %}` emission loop
+readable. `CP01`/`CP02` force lowercase keywords and identifiers; `AM04` requires an explicit column list,
+because `select *` in a model is a contract that changes without a commit. **`ST05` is the collision**: it
+bans subqueries in favour of CTEs, §7.3 bans CTEs inside `WITH RECURSIVE`, and D11 makes every stage a
+table — so a rule that is right everywhere else is wrong on the flagship models. Its scope is B.8's open
+question, and the spike is Stage 0.8.
 
-# ST06 (structure.column_order) -- column order is dictated by the model JSON and
-#      must stay stable for parity diffing; a linter reordering it changes the contract.
-# LT09 (layout.select_targets) -- reflows select lists, fighting the {% for %} loops
-#      that emit the gamma_/bf_ column families.
-exclude_rules = ST06, LT09
+The **blocked-words list** carries one deliberate carve-out: `USING SAMPLE` is blocked as
+non-deterministic, but D9 needs it, so the carve-out is named in the file rather than left to a reviewer.
+The casting style is `cast(x as type)` rather than `x::type`, because §12.2's fixtures must spell their
+types out and a fixture is easier to read when it matches the model.
 
-max_line_length = 100
-processes = 0
-
-# Lints hand-written literal SQL; violations INSIDE templated regions are suppressed.
-# This suppresses VIOLATIONS only -- every byte of rendered SQL must still lex and
-# parse, so a macro emitting malformed SQL still fails.
-ignore_templated_areas = True
-
-# Nothing is ever silently skipped. A skipped file reporting success is the worst
-# outcome a lint gate can produce.
-fix_even_unparsable = False
-large_file_skip_byte_limit = 0
-large_file_skip_char_limit = 0
-disable_noqa = False
-warn_unused_ignores = True
-
-[sqlfluff:templater:dbt]
-project_dir = ./
-profiles_dir = ./profiles
-profile = dbt_er
-target = ci
-
-# There is deliberately NO [sqlfluff:templater:dbt:context] block. This file is
-# parsed as INI, so a section holds flat scalars only -- a nested Splink
-# `comparisons: [{...}]` cannot survive it. The model JSON reaches the templater
-# through DBT_ER_MODEL_JSON in the environment plus the `vars:` defaults in
-# dbt_project.yml, so a bare `sqlfluff lint` works with no setup.
-
-[sqlfluff:indentation]
-indent_unit = space
-tab_space_size = 4
-indented_joins = False
-indented_ctes = False
-indented_using_on = True
-template_blocks_indent = True
-
-[sqlfluff:layout:type:comma]
-line_position = trailing
-[sqlfluff:layout:type:binary_operator]
-line_position = leading
-[sqlfluff:layout:type:set_operator]
-line_position = alone:strict
-
-# ---- capitalisation: lowercase everything, no exceptions -------------------
-[sqlfluff:rules:capitalisation.keywords]
-capitalisation_policy = lower
-[sqlfluff:rules:capitalisation.identifiers]
-extended_capitalisation_policy = lower
-[sqlfluff:rules:capitalisation.functions]
-extended_capitalisation_policy = lower
-[sqlfluff:rules:capitalisation.literals]
-capitalisation_policy = lower
-[sqlfluff:rules:capitalisation.types]
-extended_capitalisation_policy = lower
-
-# ---- aliasing --------------------------------------------------------------
-[sqlfluff:rules:aliasing.table]
-aliasing = explicit
-[sqlfluff:rules:aliasing.column]
-aliasing = explicit
-[sqlfluff:rules:aliasing.length]
-# `l` and `r` are the canonical left/right aliases in every pairwise model and
-# match Splink's own column suffixes, so a minimum length would fight the domain.
-min_alias_length = None
-max_alias_length = 30
-[sqlfluff:rules:aliasing.forbid]
-# AL07 stays OFF: this project REQUIRES l/r aliases on self-joins.
-force_enable = False
-
-# ---- ambiguity: the determinism core ---------------------------------------
-# AM03 (explicit ASC/DESC), AM04 (bans SELECT *), AM08 (implicit cross join -- a
-# free pair-explosion guard) and AM09 (LIMIT without ORDER BY) take no options
-# and are already on via `rules = all`.
-[sqlfluff:rules:ambiguous.join]
-fully_qualify_join_types = both
-[sqlfluff:rules:ambiguous.column_references]
-# Bans ordinal `group by 1, 2`: a column reordering silently changes the query.
-group_by_and_order_by_style = explicit
-
-# ---- references ------------------------------------------------------------
-# RF01 (references.from) is disabled by default FOR DUCKDB BY NAME upstream --
-# structs and lateral references cause false positives -- so it is deliberately
-# not force-enabled here.
-[sqlfluff:rules:references.consistent]
-single_table_references = qualified
-[sqlfluff:rules:references.keywords]
-unquoted_identifiers_policy = aliases
-quoted_identifiers_policy = none
-
-# ---- conventions -----------------------------------------------------------
-[sqlfluff:rules:convention.not_equal]
-preferred_not_equal_style = c_style
-[sqlfluff:rules:convention.select_trailing_comma]
-select_clause_trailing_comma = forbid
-[sqlfluff:rules:convention.terminator]
-# dbt wraps every model in a CTAS, so a trailing semicolon is a syntax error.
-require_final_semicolon = False
-[sqlfluff:rules:convention.casting_style]
-# CAST(x AS t) is greppable in a way that `::` is not.
-preferred_type_casting_style = cast
-[sqlfluff:rules:convention.quoted_literals]
-force_enable = True
-preferred_quoted_literal_style = single_quotes
-
-# Non-determinism ban list: anything here makes two runs of identical input differ.
-# `using sample` is deliberately NOT blocked -- DesignDoc D9 REQUIRES
-# `USING SAMPLE bernoulli(x%) REPEATABLE(seed)` for reproducible u-estimation.
-[sqlfluff:rules:convention.blocked_words]
-blocked_words = random,now,current_timestamp,current_date,current_time,current_localtime,current_localtimestamp,gen_random_uuid,uuid,uuidv4,uuidv7,nextval,setseed,random_string,txid_current,transaction_timestamp
-
-# ---- structure -------------------------------------------------------------
-[sqlfluff:rules:structure.subquery]
-# Force named, diffable CTEs. A parity diff against Splink is read by humans.
-forbid_subquery_in = both
-[sqlfluff:rules:structure.join_condition_order]
-preferred_first_table_in_join_clause = earlier
-```
 
 Two rules earned their keep immediately on the reference model: **RF04** flagged an alias named `source`
 (a keyword), and **RF03** caught an unqualified column reference in a single-table CTE.
@@ -1341,28 +1239,16 @@ SQLFluff 4.3.0's duckdb dialect has **no grammar for `WITH RECURSIVE … USING K
 zero times in `dialect_duckdb.py`, and there is no `CommonTableExpression` override. Affected files raise
 PRS (unparsable) and `sqlfluff fix` refuses to touch them.
 
-```gitignore
-target/
-dbt_packages/
-integration_tests/target/
-integration_tests/dbt_packages/
-logs/
-.venv/
-harness/
-fixtures/
-macros/          # performance only: the dbt templater already skips macro files
+**Canonical: [`.sqlfluffignore`](../.sqlfluffignore).** It excludes build output — `target/`,
+`dbt_packages/`, and both under `integration_tests/` — plus the recursive models SQLFluff cannot parse at
+all.
 
-# ---- TRACKED EXEMPTIONS ----------------------------------------------------
-# No USING KEY grammar in SQLFluff 4.3.0's duckdb dialect. A pre-commit hook and
-# a CI step assert this list never exceeds two model entries. Delete when the
-# upstream grammar lands.
-#
-# Rejected alternatives: `warnings = PRS` and `ignore = parsing` are GLOBAL and
-# would hide every parse error project-wide; a per-file `-- noqa-file` hides
-# genuine parse errors inside that file and is trivially copy-pasted onward.
-models/marts/er_entity_clusters.sql
-models/intermediate/er_int_em_iterations.sql
-```
+**The cap is the point, not the list.** §11.2 permits at most **two** parse-failure exemptions, and each
+must name the SQLFluff version that could not parse it. An ignore file that grows silently is how a linter
+stops covering the code it was bought for; a cap that must be raised in a reviewed commit is a
+conversation. `scripts/check_no_nondeterminism.py` still walks the ignored files, so the determinism rules
+apply to code SQLFluff itself cannot read.
+
 
 The cap matters more than the exemption. An ignore file with no ceiling becomes the place failures go to
 be forgotten.
@@ -2802,143 +2688,18 @@ Copy-pasteable. Provenance marked per file.
 
 ### C.1 `dbt_project.yml` — the package `[VERIFIED — as executed, v1 form]`
 
-```yaml
----
-name: "dbt_er"
-version: "0.1.0"
-config-version: 2
+**Canonical: [`dbt_project.yml`](../dbt_project.yml).** Per §23 the repository file is canonical. What
+this section keeps is the provenance marker above, the reasoning below, and the delta ledger that follows —
+the deltas being the part this document uniquely records.
 
-# Upper bound includes 2.0.0 so the package is not marked incompatible the day a
-# major lands. The EXACT runtime version is pinned in uv.lock; this range is the
-# compatibility contract offered to consumers.
-require-dbt-version: [">=1.10.0", "<3.0.0"]
+**The shape, for a reader who needs it without opening the file.** `name: dbt_er`, `require-dbt-version`
+pinned to the §4 range, `model-paths`/`test-paths`/`macro-paths` at their conventional roots, and a `vars:`
+block carrying only the values a consumer is *meant* to set: `er_input_relation`, `er_input_columns`,
+`er_thresholds`, and the quality floors. The hardening values live in `macros/quality/er_hardening.sql`,
+not here — see delta 10 and the RC48 note below, which is the distinction that keeps the compile gate from
+being consumer-disarmable. `on-run-start` invokes `er_assert_project_standards()`, and `flags:` must stay
+byte-identical to `integration_tests/dbt_project.yml` (3.22).
 
-profile: "dbt_er"
-
-model-paths: ["models"]
-macro-paths: ["macros"]
-seed-paths: ["seeds"]
-test-paths: ["tests"]
-analysis-paths: ["analyses"]
-# NOTE: setting docs-paths REPLACES the default (all resource paths) -- any
-# {% docs %} block outside these directories is silently dropped.
-docs-paths: ["models", "macros"]
-clean-targets: ["target", "dbt_packages"]
-
-# Consumers physically cannot ref() our staging/intermediate internals.
-restrict-access: true
-
-# ---------------------------------------------------------------------------
-# `flags:` are read ONLY from the INVOKED project. They do NOT reach consumers,
-# and do NOT apply when dbt is invoked from integration_tests/. This block MUST
-# stay identical to the one there -- scripts/check_flags_parity.py asserts it.
-# ---------------------------------------------------------------------------
-flags:
-  send_anonymous_usage_stats: false
-
-  # V2 syntax. The legacy include:/exclude: form raises WEOIncludeExcludeDeprecation,
-  # and with `error: all` that deprecation is itself an error.
-  warn_error_options:
-    error: all
-    warn: []
-    # dbt-core #11792 / #12574 are OPEN: validate_macro_args false-positives on
-    # custom generic tests. REMOVAL TRIGGER: delete once #11792 ships.
-    silence: ["InvalidMacroAnnotation"]
-
-  # --- already true at 1.12.2; pinned so an upstream flip cannot loosen us ---
-  validate_macro_args: true
-  require_generic_test_arguments_property: true
-  require_all_warnings_handled_by_warn_error: true
-  require_resource_names_without_spaces: true
-  require_explicit_package_overrides_for_builtin_materializations: true
-  skip_nodes_if_on_run_start_fails: true
-  source_freshness_run_project_hooks: true
-  state_modified_compare_more_unrendered_values: true
-
-  # --- default false, flipped ON for maximum strictness ---
-  state_modified_compare_vars: true
-  require_unique_project_resource_names: true
-  require_ref_searches_node_package_before_root: true
-  require_valid_schema_from_generate_schema_name: true
-  require_sql_header_in_test_configs: true
-  require_corrected_analysis_fqns: true
-  require_source_and_semantic_model_names_without_spaces: true
-  require_event_names_in_deprecations: true
-
-  # --- left false ON PURPOSE: enabling these LOOSENS behaviour ---
-  allow_jinja_file_extensions: false
-  support_custom_ref_kwargs: false
-  use_catalogs_v2: false
-  latest_version_pointer_enabled_by_default: false
-
-vars:
-  # PRIMARY INGESTION PATH:
-  #   export DBT_ER_MODEL_JSON="$(cat fixtures/model_jsons/fake_1000_v1.json)"
-  # consumed as fromjson(env_var('DBT_ER_MODEL_JSON')). See section 9 for why
-  # env_var and not --vars.
-  er_model: {}
-
-  # Derived where er_model is emitted, NOT by a macro: the schema.yml context has
-  # no macros. Consumed as `columns: "{{ var('er_gamma_columns') }}"`.
-  er_gamma_columns: []
-  er_bf_columns: []
-  er_scored_pairs_columns: []
-  er_enforce_contracts: true
-
-  er_thresholds: [0.9]
-  # From measured capacity, NOT Splink's per-rule max_rows_limit of 1e9 -- at the
-  # measured 946 B/pair that limit would admit a 946 GB build (Appendix A, B1).
-  er_max_pairs: 42000000
-  # See section 7. false => the two widest intermediates go ephemeral and dbt
-  # fuses them into one CTAS. CI and the parity harness set this true.
-  er_materialise_intermediates: false
-
-  # ---- policy knobs. Raising any of these is a reviewable act -------------
-  er_allowed_materializations: ["table", "ephemeral"]
-  er_must_be_table: ["er_entity_clusters"]
-  er_min_model_description_chars: 40
-  er_min_column_description_chars: 10
-  er_standards_exempt_models: []
-
-  # ---- observability: OFF by default. A package's on-run-end hook fires in
-  # every consumer's project and dbt-core #10592 is still open.
-  er_obs_enabled: false
-  er_obs_database: "obs"
-  er_obs_schema: "er_meta"
-
-models:
-  dbt_er:
-    +enabled: "{{ var('dbt_er_enabled', true) }}"
-    +schema: entity_resolution
-    +materialized: table
-    +contract:
-      enforced: true
-      alias_types: false      # native DuckDB types; no adapter remapping
-    +persist_docs:
-      relation: true
-      columns: true
-    +group: er_core
-    +access: private
-
-    # Only layers that CURRENTLY contain models are configured. `error: all`
-    # turns dbt's "unused configuration paths" warning into a build failure, so a
-    # block for a directory that does not exist yet is itself an error. Add each
-    # layer's block in the same commit as its first model.
-    staging:
-      +tags: ["parity", "parity_stage_2"]
-
-data_tests:
-  dbt_er:
-    +severity: error
-    +store_failures_as: table
-    +schema: er_test_failures
-    +limit: 500
-
-# Travels WITH the package, so it also protects consumers -- whose root project
-# can override our model configs. This is the only gate that reaches their build.
-on-run-start:
-  - "{{ dbt_er.er_assert_project_standards() }}"
-```
 
 #### C.1 deltas required by v2 `[UNVERIFIED]`
 
@@ -2992,16 +2753,15 @@ warehouse that did not ask for them.
 
 ### C.2 `packages.yml` — the shipped surface `[VERIFIED]`
 
-```yaml
----
-# EVERYTHING HERE IS FORCE-INSTALLED INTO EVERY CONSUMER PROJECT.
-# dbt resolves dependencies transitively. Development packages belong in
-# integration_tests/packages.yml. scripts/check_root_packages_minimal.py asserts
-# this file never grows.
-packages:
-  - package: dbt-labs/dbt_utils
-    version: [">=1.4.1", "<2.0.0"]
-```
+**Canonical: [`packages.yml`](../packages.yml).** One entry, `dbt-labs/dbt_utils >=1.4.1,<2.0.0`.
+
+Everything in that file is **force-installed into every consumer project**, because dbt resolves package
+dependencies transitively — so a development convenience added there becomes a dependency of every
+downstream build, and the person who pays for it never sees the commit. Development packages belong in
+`integration_tests/packages.yml`, which no consumer installs. `scripts/check_root_packages_minimal.py`
+(3.29) asserts the shipped set never grows, and rejects `local:` and `git:` entries by name.
+
+No deltas.
 
 ### C.3 `profiles/profiles.yml` `[VERIFIED]`
 
@@ -3013,260 +2773,45 @@ packages:
 > reopening B.1; `dbt docs generate` would catalog an empty database and the bouncer's catalog tier would
 > pass over nothing.
 
-```yaml
----
-# Checked in: DuckDB is an in-process file, so there are no secrets here.
-dbt_er:
-  target: ci
-  outputs:
+**Canonical: [`profiles/profiles.yml`](../profiles/profiles.yml).** Checked in deliberately: DuckDB is an
+in-process file, so there are no secrets in it.
 
-    # ci -- the ONLY target whose determinism guarantees hold.
-    ci:
-      type: duckdb
-      path: "{{ env_var('DBT_ER_DB_PATH', 'target/dbt_er.duckdb') }}"
-      schema: main
-      # dbt-level model parallelism. 1 keeps model execution serial, which keeps
-      # the observability query log unambiguous at negligible cost -- DuckDB
-      # parallelises WITHIN each query. NOT the same knob as settings.threads.
-      threads: 1
-      extensions: [json]        # duckdb_logs_parsed() needs it
+**The shape.** Target `ci` is the **only** one whose determinism guarantees hold — `threads` from
+`DBT_ER_DUCKDB_THREADS` defaulting to 8 (§13.2 is explicit that determinism runs at 8, never 1), a
+`memory_limit` that fails hard rather than degrading, an explicit `temp_directory` and
+`max_temp_directory_size`, and `preserve_insertion_order: false`. The database path comes from
+`DBT_ER_DB_PATH`, which is what lets `verify_gates.py` point a scratch copy at its own file.
 
-      attach:
-        # Metrics live in a SEPARATE file so they survive `dbt clean` and
-        # `--full-refresh` and can be uploaded as a CI artifact.
-        - path: "{{ env_var('DBT_ER_OBS_DB', 'target/dbt_er_observability.duckdb') }}"
-          alias: obs
+`memory_limit` matters more than it looks: G13 measured that DuckDB 1.5.5 exposes **no statement timeout**
+(`duckdb_settings()` returns zero rows for `%timeout%`), so it, not a clock, is the real backstop — and
+D4a's finding that `USING KEY` OOMs rather than degrading is what makes that a hard boundary instead of a
+slow one.
 
-      retries:
-        connect_attempts: 5
-        query_attempts: 3
-        retryable_exceptions: ["IOException"]
-
-      # dbt-duckdb re-issues every entry as `SET key = 'value'` on EVERY cursor,
-      # which is what LOCAL-scoped settings need to reach all threads.
-      settings:
-        # 'no_output' writes ZERO profile files but still populates the metrics
-        # log. Per-model profiling_output files are NOT used: DuckDB overwrites
-        # the file on every query and the setting is LOCAL on a shared instance.
-        enable_profiling: "no_output"
-        profiling_mode: "standard"
-
-        # PINNED, never autodetected: thread count changes parallel float
-        # summation order, and runner sizes have changed before. The determinism
-        # gate runs at 8, NEVER 1 -- a single-threaded check also passed a WRONG
-        # USING KEY formulation (DesignDoc M15).
-        threads: "{{ env_var('DBT_ER_DUCKDB_THREADS', '8') }}"
-        memory_limit: "{{ env_var('DBT_ER_MEMORY_LIMIT', '8GB') }}"
-        temp_directory: "{{ env_var('DBT_ER_TEMP_DIR', 'target/duckdb_tmp') }}"
-        # A runner has ~14 GB of SSD and DuckDB spills up to 90% of free disk by
-        # default. Cap it so a runaway join fails fast instead of filling the volume.
-        max_temp_directory_size: "8GiB"
-        # preserve_insertion_order deliberately NOT set (default true). Setting it
-        # false lets DuckDB reorder rows lacking ORDER BY, voiding section 13.
-
-    # bench -- performance measurement ONLY.
-    # DETERMINISM GUARANTEES DO NOT APPLY HERE. Never use for parity or baselines.
-    bench:
-      type: duckdb
-      path: "{{ env_var('DBT_ER_DB_PATH', 'target/bench.duckdb') }}"
-      schema: main
-      threads: 1
-      extensions: [json]
-      settings:
-        enable_profiling: "no_output"
-        profiling_mode: "detailed"
-        threads: "{{ env_var('DBT_ER_DUCKDB_THREADS', '8') }}"
-        memory_limit: "{{ env_var('DBT_ER_MEMORY_LIMIT', '12GB') }}"
-        temp_directory: "{{ env_var('DBT_ER_TEMP_DIR', 'target/duckdb_tmp') }}"
-        max_temp_directory_size: "8GiB"
-        preserve_insertion_order: "false"
-```
 
 ### C.4 `macros/quality/er_assert_project_standards.sql` `[VERIFIED]`
 
 The compile-time gate, and the only one that reaches a consumer's build.
 
-```sql
-{% macro er_assert_project_standards() %}
-  {#-
-    `graph` is fully populated in an on-run-start hook: ManifestLoader calls
-    build_flat_graph() before any task executes. At dbt-core 1.12.2 the flat graph
-    exposes nodes, sources, exposures, metrics, groups, semantic_models,
-    saved_queries, functions AND unit_tests -- which is what makes unit-test
-    coverage enforceable here without a third-party tool.
+**Canonical: [`macros/quality/er_assert_project_standards.sql`](../macros/quality/er_assert_project_standards.sql).**
 
-    graph.nodes values are plain nested dicts (FlatGraphMapping.__getitem__
-    returns .to_dict(omit_none=False)), so .get() is used throughout.
-  -#}
+**The shape.** One `{% macro %}`, invoked from `on-run-start`, looping `graph.nodes` filtered to
+`resource_type == 'model'` and `package_name == 'dbt_er'`, collecting violations and raising once with all
+of them rather than failing on the first. It reads its policy from `er_hardening()` (§2.1, delta 10) so
+that root-project config cannot reach the values, and honours the `er_standards_enabled` escape hatch and
+the fail-soft-abroad rule.
 
-  {%- if not execute -%}
-    {#- Hook Jinja is also rendered at parse time for ref extraction. -#}
-    {{ return("select 1 as er_standards_not_evaluated_at_parse_time") }}
-  {%- endif -%}
+**One trap worth stating here, because it is a rule about the gate rather than about the file.** `dbt
+parse` does **not** execute `on-run-start` hooks, so parsing a project never fires this gate. C.7 carries a
+separate `dbt run-operation er_assert_project_standards` step for exactly that reason, and
+`verify_gates.py` invokes the same command — an injection run against `dbt parse` would have passed every
+time while proving nothing.
 
-  {%- set pkg            = 'dbt_er' -%}
-  {%- set allowed_mat    = var('er_allowed_materializations', ['table']) -%}
-  {%- set must_be_table  = var('er_must_be_table', ['er_entity_clusters']) -%}
-  {%- set min_model_desc = var('er_min_model_description_chars', 40) -%}
-  {%- set min_col_desc   = var('er_min_column_description_chars', 10) -%}
-  {%- set exempt         = var('er_standards_exempt_models', []) -%}
-  {%- set sections = ['**Purpose:**', '**Grain:**', '**Upstream:**',
-                      '**Splink parity:**', '**Determinism:**', '**Caveats:**'] -%}
-
-  {%- set violations = [] -%}
-  {%- set n = namespace(models=0) -%}
-
-  {%- set unit_tested = [] -%}
-  {%- for ut in graph.get('unit_tests', {}).values() -%}
-    {%- do unit_tested.append(ut.get('model')) -%}
-  {%- endfor -%}
-
-  {%- for node in graph.nodes.values() -%}
-    {%- if node.get('resource_type') == 'model'
-           and node.get('package_name') == pkg
-           and node.get('name') not in exempt -%}
-
-      {%- set n.models = n.models + 1 -%}
-      {%- set name     = node.get('name') -%}
-      {%- set sql_path = node.get('original_file_path', '') -%}
-      {%- set cfg      = node.get('config', {}) or {} -%}
-      {%- set meta     = cfg.get('meta', {}) or {} -%}
-
-      {#- ---- 1:1 colocated <model>.yml ---------------------------------- -#}
-      {%- set raw_patch = node.get('patch_path') -%}
-      {%- if raw_patch is none -%}
-        {%- do violations.append(
-          name ~ ": no properties file. Create "
-          ~ sql_path | replace('.sql', '.yml')) -%}
-      {%- else -%}
-        {%- set yml = raw_patch.split('://')[-1] -%}
-        {%- if yml.split('/')[-1] != name ~ '.yml' -%}
-          {%- do violations.append(
-            name ~ ": documented in '" ~ yml.split('/')[-1] ~ "'. The 1:1 rule "
-            ~ "requires '" ~ name ~ ".yml'; folder-level schema.yml is banned.") -%}
-        {%- endif -%}
-        {%- if yml.rsplit('/', 1)[0] != sql_path.rsplit('/', 1)[0] -%}
-          {%- do violations.append(
-            name ~ ": properties file is not colocated with the .sql.") -%}
-        {%- endif -%}
-      {%- endif -%}
-
-      {#- ---- materialisation policy ------------------------------------- -#}
-      {%- set mat = cfg.get('materialized') -%}
-      {%- if mat not in allowed_mat -%}
-        {%- do violations.append(
-          name ~ ": materialized='" ~ mat ~ "' but policy allows only "
-          ~ (allowed_mat | join('/')) ~ ". Constraints are SILENTLY INERT on "
-          ~ "view/ephemeral -- dbt only warns -- so this is the only signal.") -%}
-      {%- endif -%}
-      {%- if mat == 'ephemeral' and not meta.get('materialisation_waiver_reason') -%}
-        {%- do violations.append(
-          name ~ ": ephemeral requires config.meta.materialisation_waiver_reason "
-          ~ "recording WHY this model gives up contracts, constraints and timing.") -%}
-      {%- endif -%}
-      {%- if name in must_be_table and mat != 'table' -%}
-        {%- do violations.append(
-          name ~ ": MUST be materialized='table' (WITH RECURSIVE ... USING KEY "
-          ~ "cannot be ephemeral); got '" ~ mat ~ "'. Never waivable.") -%}
-      {%- endif -%}
-
-      {#- ---- contract + primary key ------------------------------------- -#}
-      {%- set contract = cfg.get('contract', {}) or {} -%}
-      {%- if mat in ['table', 'incremental'] and not contract.get('enforced', false) -%}
-        {%- do violations.append(
-          name ~ ": contract.enforced is false. Contracts are how we prove every "
-          ~ "output column is declared and typed -- dbt raises on an empty column "
-          ~ "list, which no linter can be fooled into passing.") -%}
-      {%- endif -%}
-
-      {%- set has_pk = namespace(v=false) -%}
-      {%- for c in node.get('constraints', []) -%}
-        {%- if c.get('type') == 'primary_key' -%}{%- set has_pk.v = true -%}{%- endif -%}
-        {%- if c.get('type') == 'foreign_key' -%}
-          {%- do violations.append(
-            name ~ ": foreign_key constraints are BANNED on dbt-duckdb. DuckDB "
-            ~ "refuses ALTER TABLE RENAME/DROP on an FK parent and dbt renames "
-            ~ "existing->backup on every rebuild, so the SECOND run fails "
-            ~ "permanently. Use a `relationships` test instead.") -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {%- for col in (node.get('columns', {}) or {}).values() -%}
-        {%- for c in col.get('constraints', []) -%}
-          {%- if c.get('type') == 'primary_key' -%}{%- set has_pk.v = true -%}{%- endif -%}
-          {%- if c.get('type') == 'foreign_key' -%}
-            {%- do violations.append(name ~ ": column-level foreign_key is banned.") -%}
-          {%- endif -%}
-        {%- endfor -%}
-      {%- endfor -%}
-      {%- if mat == 'table' and not has_pk.v
-             and not meta.get('primary_key_by_test_reason') -%}
-        {%- do violations.append(
-          name ~ ": no primary_key constraint. Pair-grain models may omit the DDL "
-          ~ "key -- a composite VARCHAR PK measured ~100x the cost of the test and "
-          ~ "builds a multi-GiB ART index -- but MUST record "
-          ~ "config.meta.primary_key_by_test_reason and carry "
-          ~ "dbt_utils.unique_combination_of_columns.") -%}
-      {%- endif -%}
-
-      {#- ---- documentation ---------------------------------------------- -#}
-      {%- set desc = (node.get('description') or '') | trim -%}
-      {%- if desc | length < min_model_desc -%}
-        {%- do violations.append(
-          name ~ ": model description missing or under " ~ min_model_desc
-          ~ " characters.") -%}
-      {%- endif -%}
-      {%- for s in sections -%}
-        {%- if s not in desc -%}
-          {%- do violations.append(
-            name ~ ": description is missing the " ~ s ~ " section.") -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {%- if (node.get('columns', {}) | length) == 0 -%}
-        {%- do violations.append(name ~ ": no columns documented.") -%}
-      {%- endif -%}
-      {%- for col_name, col in (node.get('columns', {}) or {}).items() -%}
-        {%- if ((col.get('description') or '') | trim | length) < min_col_desc -%}
-          {%- do violations.append(
-            name ~ "." ~ col_name ~ ": column description missing or too short.") -%}
-        {%- endif -%}
-        {%- if not col.get('data_type') -%}
-          {%- do violations.append(
-            name ~ "." ~ col_name ~ ": no data_type declared.") -%}
-        {%- endif -%}
-      {%- endfor -%}
-
-      {#- ---- unit-test coverage ----------------------------------------- -#}
-      {%- if mat in ['table', 'ephemeral']
-             and 'recursive' not in (meta.get('sql_features') or '')
-             and name not in unit_tested -%}
-        {%- do violations.append(
-          name ~ ": no unit test. Models using recursive SQL are exempt by policy "
-          ~ "but must declare config.meta.sql_features: 'recursive'.") -%}
-      {%- endif -%}
-
-    {%- endif -%}
-  {%- endfor -%}
-
-  {%- if (violations | length) > 0 -%}
-    {%- set msg -%}
-dbt-er project standards: {{ violations | length }} violation(s) across {{ n.models }} model(s).
-{% for v in violations | sort %}  - {{ v }}
-{% endfor %}
-Fix these, or relax the policy deliberately via the er_* vars in dbt_project.yml.
-Every relaxation is a reviewable change; see docs/DbtBestPractices.md section 18.
-    {%- endset -%}
-    {%- do exceptions.raise_compiler_error(msg) -%}
-  {%- endif -%}
-
-  {{ return("select " ~ n.models ~ " as er_models_passing_standards") }}
-{% endmacro %}
-```
 
 It reports **every** violation at once rather than failing on the first. A gate that surfaces one problem
 per run trains people to stop running it.
 
-**C.4 deltas — started in v2.2, incomplete.** The block above is `[VERIFIED]` *as executed in v1* and is
-kept in that form; the table below is what must change before it is re-executed. Only the unit-test rows
+**C.4 deltas — started in v2.2, and now applied.** The v1 macro was `[VERIFIED]` *as executed*; rows 1–11
+below have since been written into the live file, which per §23 is canonical. Only the unit-test rows
 are filled in here, because those are what this revision decided — the remaining rows are the ones RC49
 enumerates and they are listed unfilled rather than omitted, so the gap is visible.
 
@@ -3305,13 +2850,17 @@ This section keeps the provenance and the reasoning; it does not keep a second c
 as-executed file was `[VERIFIED]`, but it lived in the scaffold Appendix D records as *"built, run, and
 then deliberately removed so this document could stand alone"* — and unlike C.1–C.4, C.6 and C.7, its text
 was never copied in, so it existed nowhere. What is in the repository is a **reconstruction** from the
-sources listed below, and it passes 25 checks on the pinned version. It is not, and cannot be, a
+sources listed below, and it passes **29** checks on the pinned version. It is not, and cannot be, a
 restoration.
 
 That matters beyond the missing file, because three other rules depend on it: 3.39's
 `check_standards_matrix.py` is specified to cross-reference it, §8.3 says the pair-versus-entity grain
 boundary *"is held by the `include:` regexes in `dbt-bouncer.yml`"*, and 3.40 asserts the custom checks
-registered inside it. Each is currently a rule about a file that does not exist.
+registered inside it. ~~Each is currently a rule about a file that does not exist.~~ **All three now have
+their subject** (2026-08-23): the file exists, `check_standards_matrix.py` cross-references it, and its
+first run found that 3.19's `check_model_has_tests_by_type` — a real dbt-bouncer check — was missing from
+this reconstruction. That is the rule doing exactly what §23 says it could not do while the file was
+fenced text.
 
 **What is known about it**, and what the reconstruction is assembled from:
 
@@ -3362,93 +2911,18 @@ labelled as such in the reconstructed file rather than presented as the verified
 
 ### C.6 `.pre-commit-config.yaml` `[UNVERIFIED]`
 
-```yaml
----
-minimum_pre_commit_version: "4.0.0"
-default_language_version:
-  python: python3.12
-fail_fast: false
+**Canonical: [`.pre-commit-config.yaml`](../.pre-commit-config.yaml).**
 
-repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
-    hooks:
-      - id: check-added-large-files
-        args: [--maxkb=4096]
-      - id: check-case-conflict
-      - id: check-merge-conflict
-      - id: end-of-file-fixer
-      - id: mixed-line-ending
-        args: [--fix=lf]
-      - id: trailing-whitespace
-      - id: no-commit-to-branch
-        args: [--branch, main]
-      - id: check-yaml
-        args: [--allow-multiple-documents]
-        # dbt_project.yml / profiles.yml legitimately contain Jinja.
-        exclude: ^(dbt_project\.yml|profiles/profiles\.yml|integration_tests/dbt_project\.yml)$
+**The shape.** Upstream hooks for whitespace, YAML and large files; `ruff` and `ruff-format`; `yamllint`;
+`sqlfluff-lint`; `no-commit-to-branch --branch main`; and the local `er-*` hooks that run this
+repository's own enforcement scripts. Every local hook sets `pass_filenames: false`, because each walks
+both project roots itself.
 
-  - repo: https://github.com/adrienverge/yamllint
-    rev: v1.38.0
-    hooks:
-      - id: yamllint
-        args: [--strict, --config-file, .yamllint.yml]
+**Two things measured rather than assumed** (Appendix D.0). pre-commit has **no `env:` hook field** and
+does not error on one, so a hook that needs an environment variable must carry it in `entry`. And
+`pre-commit run --all-files` sees only **tracked** files, so a newly written script reports
+"(no files to check)" and passes — staging comes before believing a green run.
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.3
-    hooks:
-      - id: ruff-check
-        args: [--fix, --exit-non-zero-on-fix]
-      - id: ruff-format
-
-  - repo: local
-    hooks:
-      # The four checks nothing off the shelf performs.
-      - id: er-yml-pairing
-        name: "1:1 .sql <-> .yml pairing"
-        entry: python scripts/check_yml_pairing.py
-        language: system
-        pass_filenames: false
-        files: ^(models|macros|tests|seeds)/
-
-      - id: er-no-nondeterminism
-        name: "no non-deterministic Jinja in model code"
-        entry: python scripts/check_no_nondeterminism.py
-        language: system
-        pass_filenames: false
-        files: ^(models|macros)/.*\.sql$
-
-      - id: er-flags-parity
-        name: "flags: identical in both dbt_project.yml files"
-        entry: python scripts/check_flags_parity.py
-        language: system
-        pass_filenames: false
-
-      - id: er-root-packages-minimal
-        name: "root packages.yml stays minimal"
-        entry: python scripts/check_root_packages_minimal.py
-        language: system
-        pass_filenames: false
-
-      # NOT the upstream sqlfluff hook: it passes filenames, and the dbt templater
-      # re-parses the ENTIRE project per invocation. One project-wide parse instead.
-      - id: sqlfluff-lint
-        name: "sqlfluff lint (duckdb + dbt templater)"
-        entry: sqlfluff lint --processes 0 --disable-progress-bar models tests
-        language: system
-        types: [sql]
-        pass_filenames: false
-        require_serial: true
-
-      - id: sqlfluffignore-cap
-        name: ".sqlfluffignore may not grow new model exemptions"
-        entry: >-
-          bash -c 'n=$(grep -c "^models/" .sqlfluffignore || true);
-          test "$n" -le 2 || { echo "New model exemption in .sqlfluffignore"; exit 1; }'
-        language: system
-        pass_filenames: false
-        files: ^\.sqlfluffignore$
-```
 
 dbt-bouncer is deliberately **CI-only**: its checks need a manifest, a catalog and run results. In
 pre-commit it would either use a stale manifest — a false green — or force a full build on every commit.
@@ -3480,126 +2954,20 @@ subject has disappeared", one layer up.**
 
 ### C.7 `.github/workflows/ci.yml` `[UNVERIFIED]`
 
-```yaml
----
-name: ci
+**Canonical: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).**
 
-on:
-  pull_request:
-  merge_group:
-  push: {branches: [main]}
+**The shape.** Six of §15's twelve jobs — `lint`, `python-tests`, `build`, `bouncer`, `verify-gates` and
+the `ci-gate` aggregator. The other six arrive **with the machinery they gate**, which is why this is not a
+gap. All twelve action references are pinned by 40-character SHA (3.56), `persist-credentials: false` is
+set on every checkout, permissions are per-job, and the runner is `ubuntu-24.04` — pinned because §22.1
+makes **linux/amd64** the normative float platform and the development machine is arm64.
 
-permissions: {contents: read}
+**`SKIP: no-commit-to-branch` on the pre-commit step is deliberate and was learned the hard way.** That
+hook checks the *current* branch, and a push run on `main` is checked out on `main` — so it failed every
+push to the base branch and turned `main` red. It is skipped **by name**, not removed: it guards a
+developer's `git commit`, CI never commits, and removing a real guard to make CI green is §21's failure
+mode.
 
-concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-env:
-  DBT_PROFILES_DIR: ${{ github.workspace }}/profiles
-  DBT_ER_DUCKDB_THREADS: "8"
-  DBT_ER_MEMORY_LIMIT: "8GB"
-  DBT_ER_TEMP_DIR: ${{ github.workspace }}/.duckdb_tmp
-  DBT_ER_OBS_DB: ${{ github.workspace }}/.observability/er_observability.duckdb
-
-jobs:
-  lint:
-    name: lint (blocking)
-    runs-on: ubuntu-24.04        # NOT ubuntu-latest: a floating label silently
-    timeout-minutes: 15          # invalidates performance trending
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-        with: {enable-cache: true, cache-dependency-glob: "uv.lock"}
-      - run: uv python install 3.12
-      - run: uv lock --check                       # fails if uv.lock is stale
-      - run: uv sync --locked --all-groups
-      - run: mkdir -p "$DBT_ER_TEMP_DIR" "$(dirname "$DBT_ER_OBS_DB")"
-      - run: uv run dbt deps --project-dir .
-      - run: uv run dbt deps --project-dir integration_tests
-      - name: package-lock.yml is current
-        run: |
-          uv run dbt deps --lock --project-dir integration_tests
-          git diff --exit-code -- integration_tests/package-lock.yml
-      - run: uv run dbt parse --target ci
-      - run: uv run sqlfluff lint models tests
-             --format github-annotation-native --annotation-level failure
-      - run: uv run pre-commit run --all-files --show-diff-on-failure
-
-  build:
-    name: build + tests (blocking)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-        with: {enable-cache: true, cache-dependency-glob: "uv.lock"}
-      - run: uv python install 3.12
-      - run: uv sync --locked --all-groups
-      - run: mkdir -p "$DBT_ER_TEMP_DIR" "$(dirname "$DBT_ER_OBS_DB")"
-      - run: uv run dbt deps --project-dir integration_tests
-      - name: Load the Splink model JSON into the environment
-        run: |
-          {
-            echo 'DBT_ER_MODEL_JSON<<__EOF__'
-            cat fixtures/model_jsons/fake_1000_v1.json
-            echo '__EOF__'
-          } >> "$GITHUB_ENV"
-      # A source creates no DAG edge, so nothing orders the fixture before the
-      # model that reads it. Seed explicitly first.
-      - working-directory: integration_tests
-        run: uv run dbt seed --target ci
-      # --empty proves every model still compiles to exactly its contracted
-      # column set, in seconds, before paying for the real build.
-      - working-directory: integration_tests
-        run: uv run dbt build --target ci --empty --fail-fast
-      - working-directory: integration_tests
-        run: uv run dbt build --target ci --full-refresh --fail-fast
-      - working-directory: integration_tests
-        run: uv run dbt run-operation er_assert_project_standards --target ci
-      - working-directory: integration_tests
-        run: uv run dbt docs generate --target ci
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: dbt-artifacts
-          path: |
-            integration_tests/target/manifest.json
-            integration_tests/target/catalog.json
-            integration_tests/target/run_results.json
-            .observability/er_observability.duckdb
-          retention-days: 14
-
-  bouncer:
-    name: dbt-bouncer (blocking)
-    runs-on: ubuntu-24.04
-    needs: build
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v8
-        with: {name: dbt-artifacts, path: integration_tests/target/}
-      - uses: astral-sh/setup-uv@v6
-      - run: uv python install 3.12
-      - run: uv sync --locked --all-groups
-      - run: uv run dbt-bouncer --config-file dbt-bouncer.yml -v
-
-  # The SINGLE required status check. Adding a job never requires editing
-  # branch-protection rulesets.
-  ci-gate:
-    name: ci-gate
-    if: always()
-    needs: [lint, build, bouncer]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Fail if any required job failed
-        run: |
-          echo '${{ toJSON(needs) }}'
-          if echo '${{ toJSON(needs) }}' | grep -qE '"result": *"(failure|cancelled)"'; then
-            echo "::error::One or more CI jobs failed"; exit 1
-          fi
-```
 
 The `parity`, `determinism` and `project-evaluator` jobs follow the same shape and are added to `ci-gate`'s
 `needs:` list as the harness lands.
@@ -3924,6 +3292,15 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     reverse direction gets skipped. They ship now and declare their emptiness in
     `scripts/pending_subjects.yml`, whose load-bearing rule is not "you may skip a missing subject" but
     **"an entry whose subject now exists is an error"**. Without the second half it would be a waiver list.
+
+33. **§23's canonical-home rule had no mechanism, and a manual sweep would have missed a quarter of it.**
+    RC33's rule is stated in §23 as prose; nothing checked it. §23's own opening explains why that decays —
+    *"mechanisms nothing verified still existed ... is how §7 stayed stale for a revision"*. Written as
+    **3.73**, `check_canonical_homes.py` found **eight** duplicated artifacts totalling **735 lines**. Six
+    were the Appendix C blocks anyone would have listed. The other two were §11.1's `.sqlfluff` and §11.2's
+    `.sqlfluffignore` — outside Appendix C, exactly where RC40 said they lived, and exactly what a sweep of
+    Appendix C would have skipped. Reducing the document once is a cleanup; the rule is what stops it
+    regrowing.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
