@@ -2902,6 +2902,8 @@ on-run-start:
 | 9 | `dbt_er_enabled` → `er_enabled` | §10.5, 3.33 |
 | 10 | Hardening values move **out of `vars:`** into a package-owned macro | §2.1, 3.51 |
 | 11 | The `data_tests:` block moves to `integration_tests/dbt_project.yml` | §12.5, 3.52 |
+| 12 | **`er_thresholds` loses its `[0.9]` default and becomes required** — an unset `thr_auto_merge` fails compilation. It also changes shape: a relation of `(thr_auto_merge, thr_review_low)` pairs cast **DOUBLE** | DesignDoc §1.7, §1.8, DR-08, DR-09, DR-22 |
+| 13 | New: `er_blocking_recall_floor`, `er_f1_floor`, `er_max_cluster_size` — committed per fixture, set at Stage 0.4, owned via `CODEOWNERS` | DesignDoc §1.8, DR-22 |
 
 Deltas 10 and 11 are the two that change shape rather than values, and both are consumer-facing: 10 is what
 makes the gate un-disarmable from root config, 11 is what stops the package writing relations into a
