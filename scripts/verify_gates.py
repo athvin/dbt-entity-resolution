@@ -55,6 +55,7 @@ _EXCLUDE = {
 
 MODEL_SQL = Path("models/intermediate/er_thresholds.sql")
 MODEL_YML = Path("models/intermediate/er_thresholds.yml")
+DOC = Path("docs/DbtBestPractices.md")
 
 # A lint threshold, not a production value. DR-22 removed the default because
 # the one that existed measurably cost ~330 true pairs for zero precision gain.
@@ -266,6 +267,68 @@ INJECTIONS: tuple[Injection, ...] = (
         command=GATE,
         expect="no unit test",
     ),
+    Injection(
+        standard="3.72",
+        what="nest a unit_tests: block -- 3.72's own mechanism, not the consequence",
+        mutate="nest_unit_tests:" + str(MODEL_YML),
+        command=("python", "scripts/check_unit_test_fixtures.py"),
+        expect="nested `unit_tests:` key",
+    ),
+    Injection(
+        standard="3.39",
+        what="delete a script the section 3 matrix names as a mechanism",
+        mutate="unlink:scripts/check_verified_markers.py",
+        command=("python", "scripts/check_standards_matrix.py"),
+        expect="which does not exist at",
+    ),
+    Injection(
+        standard="3.44",
+        what="move a pin away from the toolchain the markers were earned on",
+        mutate="noop",
+        command=("python", "scripts/check_verified_markers.py"),
+        expect="DEMOTED to [UNVERIFIED]",
+        edits=((str(DOC), "yamllint 1.38.0 ·", "yamllint 1.37.0 ·"),),
+    ),
+    Injection(
+        standard="3.49",
+        what="pin a divergence with a test and never log it",
+        mutate=(
+            "write:tests/divergence/test_div_99_unlogged.sql:"
+            "-- DIV-99: a divergence pinned by a test and recorded nowhere.\n"
+            "select 1 as never_logged\n"
+        ),
+        command=("python", "scripts/check_divergence_log.py"),
+        expect="pinned and unrecorded",
+    ),
+    Injection(
+        standard="3.50",
+        what="stop declaring PARITY.md pending while it still does not exist",
+        mutate="noop",
+        command=("python", "scripts/check_divergence_log.py"),
+        expect="not declared pending (3.50",
+        edits=(
+            (
+                "scripts/pending_subjects.yml",
+                "  - path: PARITY.md\n    check: check_divergence_log.py",
+                "  - path: PARITY.md.disabled\n    check: check_divergence_log.py",
+            ),
+        ),
+    ),
+    Injection(
+        standard="3.62",
+        what="add a baseline with no provenance sidecar",
+        mutate="write:fixtures/fake_1000/baseline_edges.parquet:not-really-parquet",
+        command=("python", "scripts/check_baseline_manifests.py"),
+        expect="no sidecar at",
+    ),
+    Injection(
+        standard="3.69",
+        what="declare a unit-test fixture `format: dict`",
+        mutate="noop",
+        command=("python", "scripts/check_unit_test_fixtures.py"),
+        expect="Only `format: sql` is permitted",
+        edits=((str(MODEL_YML), "      format: sql", "      format: dict"),),
+    ),
 )
 
 
@@ -319,6 +382,10 @@ def _mutate(scratch: Path, op: str, rest: str) -> None:
         (scratch / src).rename(scratch / dst)
     elif op == "write":
         rel, _, body = rest.partition(":")
+        # Parents are created: several injections write into a directory the
+        # repository does not have yet (`tests/`, `fixtures/`), which is the
+        # whole point of the checks that guard them.
+        (scratch / rel).parent.mkdir(parents=True, exist_ok=True)
         (scratch / rel).write_text(body, encoding="utf-8")
     elif op == "append":
         rel, _, body = rest.partition(":")

@@ -84,6 +84,13 @@ manifest_checks:
   - name: check_model_test_coverage
     min_model_test_coverage_pct: 100
   - name: check_model_has_unique_test
+  # 3.19 names this check and the reconstructed C.5 omitted it -- found by 3.39,
+  # which is the first thing `check_standards_matrix.py` caught. Note the
+  # default for both minimums is 0, i.e. the check passes on a model with no
+  # tests at all; configuring it without a minimum would have closed the 3.39
+  # finding while enforcing nothing.
+  - name: check_model_has_tests_by_type
+    min_number_of_schema_tests: 1
   # 3.20, unscoped per D12. The `recursive` and fixed-schema exemptions are gone:
   # M17's own [RECON] showed recursive USING KEY models unit-test fine on the
   # pinned toolchain, so the guard argued against its own evidence.

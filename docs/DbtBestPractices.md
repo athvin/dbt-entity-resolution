@@ -291,6 +291,17 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | 3.70 | A model's unit tests cover the case classes D12 enumerates, and each unanswered question is recorded rather than left blank | — | — | **Convention (unenforced).** A gate can count tests and can require the recorded answer; it cannot know that a `CASE` arm has no case. §12.2 states the checklist and §17 puts it in review |
 | 3.71 | A consumer's build never executes this package's unit tests | `consumer_smoke/` job (§19.3, 3.64) asserts zero `unit_test` rows in its `run_results.json`; if dbt does execute them, the package ships the documented `--exclude-resource-type unit_test` guard and the job asserts that instead | CI | Job fails |
 
+| | **— v2.3 addition (Appendix D.0 finding 4). `[VERIFIED]` against the §4 pins. —** | | | |
+| 3.72 | A `unit_tests:` block is at the **top level** of its properties file, never nested under a `models:` entry | `scripts/check_unit_test_fixtures.py` rejects a `unit_tests` key inside a `models:` entry, in both project roots; the policy macro's 3.20 check catches the consequence | P + CI + C | Non-zero exit naming the file and the model |
+
+> **On 3.72 — why the consequence is not enough.** D.0 finding 4 measured it: a nested `unit_tests:` block
+> is **silently ignored** by dbt-core 1.12.2. Clean parse, exit 0, no warning. The compile gate does fail —
+> but it fails with *"no unit test"*, pointing at a model whose properties file visibly contains three of
+> them, which is the least actionable true statement the gate could make. 3.72's own mechanism names the
+> nesting directly. *(This row closes the "not yet added to §3" note in D.0 finding 4: the injection landed
+> in step 4 as promised, and `check_standards_matrix.py` now fails on an injection whose standard has no
+> row — which is how the gap was found.)*
+
 > **On 3.13 — why 3.11 and 3.12 are not redundant.** dbt's
 > `materialization_enforces_constraints` returns true only for `table` and `incremental`. On any other
 > materialization, constraints are dropped with a **warning, not an error**. A single stray
@@ -299,9 +310,12 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 > 3.21 is load-bearing rather than cosmetic.
 
 > **[REVIEW 2026-08-23] Fixed (F18) — RC33's canonical-home rule is now stated in §23**, and Appendix C's
-> header carries its handover half. **3.39 remains inert until the scaffold lands**, because its three
-> subject files do not yet exist — that is not a defect in the rule, it is the state the rebuild changes,
-> and Appendix D's bootstrap order is where it is sequenced.
+> header carries its handover half. ~~**3.39 remains inert until the scaffold lands**, because its three
+> subject files do not yet exist~~ — **superseded 2026-08-23**: the three subject files exist and
+> `scripts/check_standards_matrix.py` is live, parsing 71 rows and resolving 130 citations. Its first run
+> found a real orphan: 3.19 names `check_model_has_tests_by_type`, a check dbt-bouncer genuinely ships and
+> the reconstructed C.5 never configured. Four rows whose mechanism is a CI job that does not exist yet
+> (3.25, 3.46, 3.60, 3.64) are itemised in `scripts/pending_subjects.yml` rather than passing silently.
 
 > **[REVIEW 2026-08-23] Fixed (F19) — RC34: 3.52 is rescoped to `on-run-end` hooks.** As written it read
 > *"sets no `store_failures_as` **and declares no hooks**"*, which parsed two ways and was wrong both
@@ -349,7 +363,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | SQLFluff + `sqlfluff-templater-dbt` | `==4.3.0` **both** | SQL style + determinism rules | P + CI | `[VERIFIED]` |
 | dbt-bouncer | `==3.8.0` | Conventions, coverage, timings | CI | `[VERIFIED]` |
 | dbt_utils | `>=1.4.1,<2` | `unique_combination_of_columns`, `expression_is_true` | B | `[VERIFIED]` — the only shipped dependency |
-| dbt_project_evaluator | `>=1.3.4,<2` | DAG and governance rules | CI | `[VERIFIED]` — `integration_tests` only |
+| dbt_project_evaluator | `>=1.3.4,<2` | DAG and governance rules | CI | `[UNVERIFIED]` — demoted 2026-08-23 by 3.44; see below |
 | yamllint | `==1.38.0` | `empty-values`, `key-duplicates` | P + CI | `[VERIFIED]` |
 | ruff | `>=0.16,<0.17` | Python lint + format | P + CI | `[VERIFIED]` |
 | mypy | `>=1.14,<3` | `--strict` over Python | P + CI | `[VERIFIED]` |
@@ -3889,6 +3903,28 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     to `main`, so removing it to make CI green would trade a real guard for a cosmetic one — which is the
     §21 failure mode.
 
+30. **Four `[VERIFIED]` markers named no toolchain, so nothing could ever have expired them.** The first run
+    of `check_verified_markers.py` found `dbt_utils`, `dbt_project_evaluator`, `ruff` and `mypy` marked
+    `[VERIFIED]` in §4 while appearing in no scope statement. §0 says a marker "is scoped to that toolchain
+    and is demoted when a pin moves" — a marker naming no toolchain is *worse* than a stale one, because a
+    stale marker is at least demotable. Three were real and merely undocumented; **`dbt_project_evaluator`
+    was not real at all** — it appears in no `packages.yml`, no Make target and no CI job, so it has never
+    run, and it is demoted rather than given a scope it did not earn. Before the check existed the four
+    were indistinguishable.
+
+31. **3.39's first run found an orphan in a file this rebuild wrote.** 3.19 names
+    `check_model_has_tests_by_type`; dbt-bouncer really ships it; the reconstructed C.5 never configured it.
+    Its two minimums both **default to 0**, so wiring it in without `min_number_of_schema_tests: 1` would
+    have closed the finding while enforcing nothing — the same shape as finding 20, in the fix rather than
+    the defect.
+
+32. **A check whose subject does not exist is the failure mode, not an excuse to defer the check.** Three
+    of the four scripts this step added police artefacts that arrive in Stage 0 or later. Deferring them
+    means writing a two-direction check later, against artefacts already in place, which is exactly when the
+    reverse direction gets skipped. They ship now and declare their emptiness in
+    `scripts/pending_subjects.yml`, whose load-bearing rule is not "you may skip a missing subject" but
+    **"an entry whose subject now exists is an error"**. Without the second half it would be a waiver list.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`
@@ -3984,9 +4020,19 @@ no longer exists; per §0 and 3.44 each is `[UNVERIFIED]` until re-executed on t
 green run is what re-earns them, and anything that did not run stays marked.
 
 **The scope of the verified markers.** Everything above was executed on dbt-core 1.12.2 · dbt-duckdb 1.11.0 ·
-DuckDB 1.5.5 · dbt-bouncer 3.8.0 · SQLFluff 4.3.0 · yamllint 1.38.0. Per §0 and 3.44, a marker is scoped to
+DuckDB 1.5.5 · dbt-bouncer 3.8.0 · SQLFluff 4.3.0 · yamllint 1.38.0 · dbt_utils 1.4.1 · ruff 0.16.4 ·
+mypy 2.3.1. Per §0 and 3.44, a marker is scoped to
 that toolchain and is demoted when a pin moves. The v2 edits did not rebuild the scaffold, so no marker was
 re-earned and none was upgraded.
+
+The last three names were added on 2026-08-23 when `check_verified_markers.py` was first run: each carried a
+`[VERIFIED]` marker while appearing in no scope statement, so **nothing could ever have expired it**. That is
+worse than a stale marker, because a stale marker is at least demotable. `dbt_utils` earns its scope through
+`expression_is_true` executing in `dbt build`; `ruff` and `mypy` through pre-commit and CI. **`dbt_project_evaluator`
+had the same defect and does not survive it** — it appears in no `packages.yml`, no Make target and no CI job, so
+it has never run and its row is demoted to `[UNVERIFIED]` above rather than given a scope it did not earn. The
+distinction is the whole point of the rule: three markers were real and undocumented, one was not real at all,
+and before the check existed they were indistinguishable. *(Appendix D.0 finding 30.)*
 
 `verify_gates.py` was the most valuable missing piece and is now **3.38** with its own CI job, rather than a
 closing remark. A standard that has never been observed to fail is not known to be enforced: copy the repo to

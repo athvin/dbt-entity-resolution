@@ -1,0 +1,73 @@
+---
+# Checks whose subject does not exist yet.
+#
+# Section 23 names the hazard directly: while a check's subject files exist only
+# as fenced blocks in a document, "the check **has no subject** -- the same
+# vacuous-pass failure section 6.1 diagnoses in `check_yml_pairing.py`'s seed
+# clause". A check that walks an empty set exits 0 and is indistinguishable, in
+# CI, from a check that verified something.
+#
+# Three of the section 3 rows land before the artefacts they police: the
+# divergence log arrives with the first deliberate divergence, `PARITY.md` with
+# section 20.3, and the baselines with Stage 0.3. Deleting the checks until then
+# means writing them later, under deadline, against artefacts already in place --
+# which is how the missing half of a two-direction check gets skipped.
+#
+# So the checks ship now and declare their emptiness here instead. Two rules,
+# both mechanised in `_er_pending.py` and both asserted by the check that owns
+# the entry:
+#
+#   1. A check may pass over a missing subject ONLY if the subject is listed
+#      here. An unlisted missing subject is an error.
+#   2. Once the path exists, the entry MUST be removed. A stale entry is an
+#      error -- otherwise the first real divergence log ships unchecked, which
+#      is the failure this file exists to prevent, arriving later and quieter.
+#
+# Rule 2 is the load-bearing half. Rule 1 alone would be a waiver list.
+
+pending:
+  - path: docs/divergence-log.md
+    check: check_divergence_log.py
+    created_by: >-
+      PE-1, or earlier -- Stage 3 replicates Splink's S4 `min(match_key)` defect
+      on purpose and that is a logged divergence the day it lands.
+    since: 2026-08-23
+
+  - path: PARITY.md
+    check: check_divergence_log.py
+    created_by: "PE-1 (section 20.3); DesignDoc DoD 5 requires it before cutover."
+    since: 2026-08-23
+
+  - path: fixtures
+    check: check_baseline_manifests.py
+    created_by: "PC-1 / PC-4 -- Stage 0.2 fixtures and the Stage 0.3 baseline harness."
+    since: 2026-08-23
+
+  # Section 3 rows whose mechanism is a CI job or harness that does not exist
+  # yet. These are Waiver B-1's remaining surface, itemised: B-1 covers "the
+  # remainder of the section 3 matrix until each mechanism exists", and this is
+  # the ledger that says which rows that still means. B-1 expires when this
+  # block is empty.
+  #
+  # Each entry is removed by the PR that builds the mechanism -- and
+  # `check_standards_matrix.py` fails if the mechanism resolves while the entry
+  # is still here, so the ledger cannot outlive the gap it records.
+  - standard: "3.25"
+    check: check_standards_matrix.py
+    created_by: "PC-2 -- the content-hash determinism suite lands with Stage 0.7."
+    since: 2026-08-23
+
+  - standard: "3.46"
+    check: check_standards_matrix.py
+    created_by: "PC-2 -- Stage 0.7's comparator sensitivity suite IS this mechanism."
+    since: 2026-08-23
+
+  - standard: "3.60"
+    check: check_standards_matrix.py
+    created_by: "PD-13 / section 19.2 -- there is no previous release tag to diff against yet."
+    since: 2026-08-23
+
+  - standard: "3.64"
+    check: check_standards_matrix.py
+    created_by: "PB-6 / section 19.3 -- the consumer-smoke job needs consumer_smoke/."
+    since: 2026-08-23
