@@ -25,7 +25,10 @@ PREDICTIONS = BASELINES / "predictions.parquet"
 RETAIN_MATCHING_COLUMNS = ("first_name_l", "first_name_r", "surname_l", "surname_r")
 RETAIN_INTERMEDIATE_COLUMNS = ("bf_first_name", "tf_city_l", "bf_tf_adj_city")
 
-EXPECTED_PAIRS = 3349
+# The FIXED model (Stage 0.4): four blocking rules, trained. Two rules alone
+# generated 3,349 -- the extra `dob` and `email` rules add 640 candidate pairs
+# and lift blocking recall 0.5057 -> 0.8124.
+EXPECTED_PAIRS = 3989
 
 
 @pytest.fixture(scope="module")

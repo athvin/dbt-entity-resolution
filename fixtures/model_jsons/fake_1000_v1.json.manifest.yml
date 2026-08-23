@@ -4,7 +4,7 @@
 kind: "baseline"
 synthetic: true
 splink_version: "4.0.16"
-model_json_sha256: "f7475115e4ad3b372f8fe5717c97469a24b4aea43dec47f961f6a9a574050845"
+model_json_sha256: "02ede04136994e937fa685b0e8beaf1b7d97ca4a8ecb8f2bd0631abcd8e21c44"
 seed: 20260823
 duckdb_version: "1.5.5"
 sqlglot_version: "30.17.0"
@@ -13,7 +13,7 @@ platform:
   architecture: "arm64"
   duckdb_build: "1.5.5"
 date: "2026-08-23"
-producing_commit: "9d571ae"
+producing_commit: "b2ebe97"
 source_fixture: "fixtures/source/fake_1000.csv"
 source_fixture_sha256: "66f9b8f92b9b082ef982fe18c77030fbed8780f06ce1d40d7106be5a72392e2a"
 thresholds:

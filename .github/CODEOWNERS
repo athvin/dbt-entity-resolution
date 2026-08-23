@@ -1,0 +1,29 @@
+# Named owners, per section 1.8 / DR-22 and section 5's layout.
+#
+# The rule this file exists for: "a floor anybody can lower to make CI green is
+# not a floor." Ownership is MECHANISED rather than named in prose, because a
+# convention that lives only in a document is a convention nobody is asked
+# about at the moment it matters.
+
+# The quality floors (er_f1_floor, er_blocking_recall_floor,
+# er_max_cluster_size) and the derived pair budget live here. Lowering any of
+# them to make a build pass is exactly the section 21 failure mode.
+/dbt_project.yml                    @athvin
+
+# The parity claim and the divergence record. Section 19.4 makes both human
+# gates; these entries are what make the human unavoidable.
+/docs/PARITY.md                     @athvin
+/docs/divergence-log.md             @athvin
+/docs/quarantine.md                 @athvin
+
+# The frozen oracle. Section 20.1: a baseline regeneration PR contains ONLY
+# baseline changes, and the reviewable artefact is a diff report, not parquet.
+/fixtures/                          @athvin
+
+# The gates themselves. A change here changes what every other change is
+# checked against.
+/scripts/                           @athvin
+/macros/quality/                    @athvin
+/.github/workflows/                 @athvin
+/dbt-bouncer.yml                    @athvin
+/.pre-commit-config.yaml            @athvin

@@ -1570,6 +1570,31 @@ worth stating twice:
 - 0.4 Freeze `model_jsons/fake_1000_v1.json` + baselines. **Must follow 0.7.** Also: fix the frozen model
   rather than freezing a bad one — it measures F1 = 0.72 and blocking recall = 0.51, and two extra
   blocking rules take it to F1 = 0.98 (M12, §A.6 Q5).
+  **DONE 2026-08-23 (PC-7), and 0.7 did precede it** — the comparator suite landed in #20, these baselines
+  in #27. **The model was wrong in two ways, and the document names only one.**
+
+  | | blocking recall | F1 @ t=0.9 |
+  |---|---|---|
+  | 2 rules, untrained | 0.5057 | 0.3810 |
+  | 2 rules, **trained** | 0.5057 | 0.6075 |
+  | **4 rules, trained** (frozen) | **0.8124** | **0.7717** |
+
+  The missing `dob` and `email` rules are the documented half. **The model was also untrained**, which is
+  not called out anywhere and matters more: training alone nearly doubles recall on identical blocking
+  rules. A baseline from an untrained model is a baseline of Splink's defaults.
+
+  **What reproduces and what does not.** Blocking recall 0.5057 reproduces this line's *"0.51"* almost
+  exactly, and precision is **1.0000 at every threshold**, matching §A.6 Q5. **F1 does not reproduce** —
+  0.6075 trained against a stated 0.72 — and the **true-pair denominator differs**: `fake_1000` at
+  sha `66f9b8f9…` contains **2,031** within-cluster pairs (1,000 records, 251 clusters, sizes 1–7, plain
+  arithmetic), where §A.6 Q5's figures imply 2,975. The *direction* of every claim reproduces; the
+  magnitudes do not. **This is precisely why DR-22 requires the floors to be set from measuring what
+  ships** — copied figures would have been unmeetable.
+
+  Floors committed from measurement, with `CODEOWNERS` entries so none can be quietly lowered:
+  `er_blocking_recall_floor` **two-sided** [0.78, 0.84], `er_f1_floor` per threshold
+  {0.5: 0.80, 0.9: 0.75, 0.99: 0.63}, `er_max_cluster_size` **7** — the fixture's true maximum, so any
+  over-merge exceeds it immediately.
 - 0.5 **Clustering spike — now resolved, retained as a regression gate.** The D4 formulation must
   reproduce a union-find partition on random, chain, and star graphs with recorded runtimes. This gate
   re-runs on every DuckDB bump.

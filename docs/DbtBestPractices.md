@@ -3473,6 +3473,30 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     serialisation dependency to write files the pinned engine can write itself would have been the easy
     default and the wrong one.
 
+48. **The frozen model was untrained, and no document said so.** §5 Stage 0.4 says to fix the model and
+    names one defect — two missing blocking rules. `[RUN]` found a second, larger one: the model was
+    **untrained**, and training alone lifts recall from 0.2354 to 0.4362 on *identical* blocking rules.
+    A baseline generated from an untrained model is a baseline of Splink's defaults rather than of a
+    model, and every parity number downstream would have been anchored to it.
+
+49. **§A.6 Q5's quality figures do not reproduce on the vendored fixture, and the direction is what
+    matters.** Measured: blocking recall **0.5057** against a stated *"0.51"* — reproduces. Precision
+    **1.0000 at every threshold** — reproduces exactly. F1 **0.6075** trained against a stated 0.72 — does
+    not. And the denominators differ: `fake_1000` contains **2,031** within-cluster pairs by plain
+    arithmetic (1,000 records, 251 clusters, sizes 1–7), where the published figures imply **2,975**.
+    Every *claim* survives — precision is saturated, so raising the threshold buys nothing and costs
+    recall; adding blocking rules materially lifts quality; the gap is invisible to parity gates — while
+    the *numbers* do not. **This is the case DR-22 was written for**: floors copied from a document would
+    have been unmeetable, and nobody would have known whether the model or the floor was wrong.
+
+50. **A Luhn check false-positives on any document full of high-precision floats.** The new PII scan
+    flagged four "card numbers" in the trained model JSON. All four were digit runs inside m/u
+    probabilities: `\b` does **not** break at a decimal point, so a mantissa offers a 16-to-19-digit run,
+    and **~10% of random digit strings pass Luhn**. Fixed with lookarounds excluding runs adjacent to a
+    digit or a dot, plus a major-industry-identifier prefix filter. The detector still catches
+    `4111111111111111` and still ignores a non-Luhn 16-digit run — both asserted. A heuristic that fires
+    on its own repository is worse than none: it trains people to skip the output.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`
