@@ -160,9 +160,50 @@ vars:
   # and owned via CODEOWNERS -- a floor anybody can lower to make CI green is
   # not a floor. Empty until Stage 0.4 measures them; Stage 0.4 cannot complete
   # without them.
-  er_blocking_recall_floor: {}
-  er_f1_floor: {}
-  er_max_cluster_size: {}
+  # ---------------------------------------------------------------------
+  # DR-22 / section 1.8 / A.6 Q5 -- the quality floors, SET FROM MEASUREMENT
+  # (Stage 0.4, 2026-08-23). `scripts/measure_quality.py` reproduces every
+  # number below from the frozen baselines and fake_1000's ground-truth
+  # `cluster` column.
+  #
+  # Why these exist at all: PARITY IS NOT QUALITY. A reimplementation can match
+  # Splink bit-for-bit and still be a bad entity resolver, because every
+  # section 6.4 gate compares two engines and none compares either to the truth.
+  #
+  # Measured on the FIXED, TRAINED model (4 blocking rules) over 2,031 true
+  # pairs -- 1,000 records in 251 clusters of size 1-7:
+  #
+  #   blocking recall            0.8124   (2 rules alone gave 0.5057)
+  #   t=0.5    precision 1.0000  recall 0.7046  F1 0.8267
+  #   t=0.9    precision 1.0000  recall 0.6283  F1 0.7717
+  #   t=0.99   precision 1.0000  recall 0.4850  F1 0.6532
+  #   max cluster size 7 at every threshold (the fixture's true max is 7)
+  # ---------------------------------------------------------------------
+
+  # TWO-SIDED, per M12 rec 2: failing below is a regression; failing ABOVE means
+  # the fixture or the oracle moved rather than the code, and that is equally a
+  # finding. The band is measured +/- ~0.03, tight enough to catch drift and
+  # loose enough to survive a patch release.
+  er_blocking_recall_floor:
+    fake_1000:
+      min: 0.78
+      max: 0.84
+
+  # Per fixture AND per threshold, because F1 varies by 0.17 across the three
+  # thresholds Stage 6 builds simultaneously -- a single floor would be either
+  # vacuous at t=0.5 or unmeetable at t=0.99. Set ~0.02 below measured.
+  er_f1_floor:
+    fake_1000:
+      "0.5": 0.80
+      "0.9": 0.75
+      "0.99": 0.63
+
+  # A HARD test, not a warning (M12 rec 3). Cluster-level error amplifies:
+  # measured edge precision 0.9764 against CLUSTER precision 0.7495, 14.8x. The
+  # value is the fixture's true maximum cluster size, so any over-merge exceeds
+  # it immediately -- which is the point.
+  er_max_cluster_size:
+    fake_1000: 7
 
   # ---- policy knobs. Raising any of these is a reviewable act -------------
   # NOTE the split (section 2.1, C.1 delta 10, RC48): these are POLICY vars and

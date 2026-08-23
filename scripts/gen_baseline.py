@@ -91,14 +91,20 @@ def _sha256(path: Path) -> str:
 
 
 def build_settings() -> Any:
-    """Return the frozen model's shape.
+    """Return the frozen model's shape -- the FIXED one (Stage 0.4).
 
-    Deliberately the two blocking rules §A.6 Q5 measured: `block_on(first_name)`
-    and `block_on(surname)`, giving F1 0.7138 / recall 0.5550. **That is a
-    deliberately mediocre model**, kept because DR-22's whole point is that
-    parity gates cannot tell F1 = 0.71 from F1 = 0.98 -- and Stage 0.4's job is
-    to fix it with measured floors, not to quietly ship a better one and lose
-    the demonstration.
+    §5 Stage 0.4 is explicit: *"fix the frozen model rather than freezing a bad
+    one"*. Two things were wrong with the obvious model, and only one of them is
+    the one the document names.
+
+    **1. Missing blocking rules.** `block_on(first_name)` and `block_on(surname)`
+    alone leave blocking recall at 0.5057 -- reproducing §5's "blocking recall =
+    0.51" almost exactly. Adding `dob` and `email` lifts it to 0.8124.
+
+    **2. The model was untrained**, which the document does not call out and
+    which matters more. `[RUN]`: training roughly doubles recall on the SAME
+    blocking rules, 0.2354 -> 0.4362. A baseline generated from an untrained
+    model is a baseline of Splink's defaults, not of a model.
     """
     import splink.comparison_library as cl  # noqa: PLC0415
     from splink import SettingsCreator, block_on  # noqa: PLC0415
@@ -112,7 +118,14 @@ def build_settings() -> Any:
             cl.ExactMatch("city").configure(term_frequency_adjustments=True),
             cl.EmailComparison("email"),
         ],
-        blocking_rules_to_generate_predictions=[block_on("first_name"), block_on("surname")],
+        blocking_rules_to_generate_predictions=[
+            block_on("first_name"),
+            block_on("surname"),
+            # The two rules §A.6 Q5 / M12 identify as the fix. Measured effect
+            # on blocking recall: 0.5057 -> 0.8124.
+            block_on("dob"),
+            block_on("email"),
+        ],
         # NEITHER IS A DEFAULT. See the module docstring and M14.
         retain_matching_columns=True,
         retain_intermediate_calculation_columns=True,
@@ -137,6 +150,27 @@ def _write_parquet(frame: pd.DataFrame, path: Path) -> None:
         con.close()
 
 
+def _train(linker: Any) -> Any:
+    """Train m and u, seeded (Stage 0.4).
+
+    Everything here is seeded or deterministic by construction, because an
+    unseeded `u` estimate makes the frozen model -- and therefore every baseline
+    generated from it -- irreproducible. `estimate_u_using_random_sampling` takes
+    a seed for exactly this reason.
+    """
+    from splink import block_on  # noqa: PLC0415
+
+    linker.training.estimate_probability_two_random_records_match(
+        [block_on("first_name", "surname"), block_on("email")], recall=0.7
+    )
+    linker.training.estimate_u_using_random_sampling(max_pairs=1_000_000, seed=SEED)
+    linker.training.estimate_parameters_using_expectation_maximisation(
+        block_on("first_name", "surname")
+    )
+    linker.training.estimate_parameters_using_expectation_maximisation(block_on("dob"))
+    return linker
+
+
 def _linker(frame: pd.DataFrame, settings: Any) -> Any:
     from splink import DuckDBAPI, Linker  # noqa: PLC0415
 
@@ -157,7 +191,14 @@ def generate(fixture: Path, out_dir: Path, model_json: Path) -> list[Path]:
     #    that is the path a consumer takes and the only one that exercises
     #    serialisation.
     model_json.parent.mkdir(parents=True, exist_ok=True)
-    _linker(frame, build_settings()).misc.save_model_to_json(str(model_json), overwrite=True)
+    trained = _train(_linker(frame, build_settings()))
+    trained.misc.save_model_to_json(str(model_json), overwrite=True)
+    # Splink writes the JSON without a trailing newline, which `end-of-file-fixer`
+    # then adds -- so every regeneration left a dirty tree AND changed the sha
+    # the manifest had just recorded. Normalise here, before the sha is taken.
+    model_json.write_text(
+        model_json.read_text(encoding="utf-8").rstrip("\n") + "\n", encoding="utf-8"
+    )
     reloaded = json.loads(model_json.read_text(encoding="utf-8"))
 
     linker = _linker(frame, reloaded)

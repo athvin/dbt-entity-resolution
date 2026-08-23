@@ -75,7 +75,17 @@ _NI_NUMBER = re.compile(r"\b[A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D]\b")
 # US SSN, excluding the ranges the SSA never issues.
 _SSN = re.compile(r"\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b")
 _IBAN = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b")
-_CARD_CANDIDATE = re.compile(r"\b(?:\d[ -]?){13,19}\b")
+# A card number is not a substring of a decimal. `\b` does NOT break at a
+# decimal point, so `0.0016225...` offered a 17-digit mantissa run that passed
+# Luhn -- and ~10% of random digit strings do, so a document full of
+# high-precision floats (a trained model JSON) false-positives reliably.
+# Lookarounds exclude runs adjacent to a digit or a dot.
+_CARD_CANDIDATE = re.compile(r"(?<![\d.])(?:\d[ -]?){13,19}(?![\d.])")
+
+# Major industry identifier: Visa 4, Mastercard 5/2, Amex 3, Discover 6. A
+# Luhn-valid run starting with anything else is not a payment card, and this
+# removes most of the remaining coincidental matches.
+_CARD_PREFIXES = ("3", "4", "5", "6", "2")
 
 
 def _luhn_valid(digits: str) -> bool:
@@ -138,7 +148,11 @@ def _scan_text(name: str, text: str) -> list[str]:
 
     for candidate in set(_CARD_CANDIDATE.findall(text)):
         digits = re.sub(r"[ -]", "", candidate)
-        if 13 <= len(digits) <= 19 and _luhn_valid(digits):  # noqa: PLR2004
+        if (
+            13 <= len(digits) <= 19  # noqa: PLR2004
+            and digits.startswith(_CARD_PREFIXES)
+            and _luhn_valid(digits)
+        ):
             findings.append(
                 f"{name}: a {len(digits)}-digit run passes the Luhn checksum "
                 f"(`{digits[:4]}...{digits[-4:]}`). That is a card-number shape."
