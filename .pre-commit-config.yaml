@@ -114,7 +114,9 @@ repos:
 
       - id: er-model-json-sidecar
         name: "model JSON passes the 1.5 trust boundary"
-        entry: python scripts/er_sidecar.py fixtures/model_jsons/fake_1000_v1.json
+        entry: >-
+          python scripts/er_sidecar.py fixtures/model_jsons/fake_1000_v1.json
+          --out fixtures/sidecar/fake_1000_v1.sidecar.json --check
         language: system
         pass_filenames: false
 

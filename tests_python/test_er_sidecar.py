@@ -284,3 +284,118 @@ def test_no_function_is_both_allowed_and_non_deterministic() -> None:
     """The two lists must not disagree, or precedence decides correctness by accident."""
     overlap = er_sidecar.ALLOWED_FUNCTIONS & er_sidecar.NON_DETERMINISTIC
     assert not overlap, f"{sorted(overlap)} appear in both lists"
+
+
+# ---------------------------------------------------------------------------
+# A.2 C2 -- TF exact-match resolution, which string-matching gets wrong in BOTH
+# directions. These four cases are the ones A.2 measured; they pin Splink's
+# behaviour so an internal moving under us is a test failure, not a parity bug.
+# ---------------------------------------------------------------------------
+
+
+def _is_exact(condition: str) -> bool:
+    from splink.internals.comparison import Comparison  # noqa: PLC0415
+
+    built = Comparison(
+        [{"sql_condition": condition, "label_for_charts": "x"}, {"sql_condition": "ELSE"}],
+        sqlglot_dialect="duckdb",
+        output_column_name="name",
+    )
+    return bool(built.comparison_levels[0]._is_exact_match)  # noqa: SLF001
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected"),
+    [
+        # Reversed operand order still counts -- a string match on "l = r" misses it.
+        ('"name_r" = "name_l"', True),
+        # A negated inequality normalises to equality under CNF.
+        ('NOT ("name_l" <> "name_r")', True),
+        # An extra conjunct disqualifies, however harmless it looks.
+        ('"name_l" = "name_r" AND 1=1', False),
+        # A function application disqualifies.
+        ("lower(name_l) = lower(name_r)", False),
+    ],
+)
+def test_a2_c2_exact_match_resolution(condition: str, expected: bool) -> None:
+    """A.2 C2's measured cases, pinned.
+
+    Two of these a naive string match would call False and two it would call
+    True -- wrong in both directions, which is why §A.2 requires the sidecar to
+    resolve this rather than approximate it.
+    """
+    assert _is_exact(condition) is expected
+
+
+def test_the_resolution_is_splinks_own_not_a_reimplementation() -> None:
+    """Resolving with our own CNF code would be the Jinja mistake, one language along.
+
+    Asserted structurally: the resolver must reach Splink's `Comparison`, so a
+    future "simplification" that reimplements the analysis fails here.
+    """
+    source = (ROOT / "scripts" / "er_sidecar.py").read_text(encoding="utf-8")
+    assert "from splink.internals.comparison import Comparison" in source
+
+
+def test_resolution_records_null_levels_rather_than_failing() -> None:
+    """Splink RAISES for m/u on a null level; that absence is a valid state."""
+    artefact = er_sidecar.build(FROZEN.read_text(encoding="utf-8"))
+    first = artefact["resolved"]["comparisons"][0]["levels"][0]
+    assert first["is_null_level"] is True
+    assert first["comparison_vector_value"] == -1
+    assert first["m_probability"] is None
+
+
+def test_tf_u_is_resolved_only_where_a_tf_adjustment_exists() -> None:
+    """`city` carries term_frequency_adjustments; `dob` does not."""
+    resolved = er_sidecar.build(FROZEN.read_text(encoding="utf-8"))["resolved"]
+    by_name = {c["output_column_name"]: c for c in resolved["comparisons"]}
+    city_exact = next(lv for lv in by_name["city"]["levels"] if lv["is_exact_match"])
+    dob_exact = next(lv for lv in by_name["dob"]["levels"] if lv["is_exact_match"])
+    assert city_exact["tf_u_exact_match"] == city_exact["u_probability"]
+    assert dob_exact["tf_u_exact_match"] is None
+
+
+def test_c3_the_json_key_is_not_evidence_of_a_source_dataset() -> None:
+    """A.2 C3's measured trap.
+
+    `source_dataset_column_name` is present in the JSON even for `dedupe_only`,
+    while the runtime `source_dataset_input_column` is None. Reading the key as
+    a boolean would report a source dataset that does not exist.
+    """
+    resolved = er_sidecar.build(FROZEN.read_text(encoding="utf-8"))["resolved"]
+    assert resolved["er_backend_link_type"] == "dedupe_only"
+    assert resolved["er_has_source_dataset"] is False
+
+
+def test_c4_left_table_is_null_because_it_is_not_in_the_json() -> None:
+    """`min(templated_name)` over input-table aliases -- a runtime fact.
+
+    Null rather than guessed: Open Question 3 governs refusing the
+    configuration, and inventing a value here would pre-empt that decision.
+    """
+    resolved = er_sidecar.build(FROZEN.read_text(encoding="utf-8"))["resolved"]
+    assert resolved["er_left_table"] is None
+
+
+def test_the_committed_sidecar_regenerates_byte_identically() -> None:
+    """Guard the generated artefact with A.2's byte-equality regeneration test.
+
+    A generated file that has drifted from its generator is worse than no
+    generated file, because every downstream consumer trusts it.
+    """
+    committed = ROOT / "fixtures" / "sidecar" / "fake_1000_v1.sidecar.json"
+    artefact = er_sidecar.build(FROZEN.read_text(encoding="utf-8"))
+    assert committed.read_text(encoding="utf-8") == (
+        json.dumps(artefact, indent=2, sort_keys=True) + "\n"
+    )
+
+
+def test_nothing_is_resolved_before_it_is_validated() -> None:
+    """Order matters: resolving first would import an unvalidated JSON into Splink.
+
+    That is the trust boundary §1.5 exists to hold, so `build` must raise on a
+    hostile model rather than resolving it.
+    """
+    with pytest.raises(er_sidecar.ValidationError):
+        er_sidecar.build(_model("random() > 0.5"))

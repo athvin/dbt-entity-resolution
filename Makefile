@@ -211,7 +211,8 @@ capacity:
 # against the new baselines."
 baseline:
 	uv run python scripts/gen_baseline.py
-	uv run python scripts/er_sidecar.py fixtures/model_jsons/fake_1000_v1.json
+	uv run python scripts/er_sidecar.py fixtures/model_jsons/fake_1000_v1.json \
+	  --out fixtures/sidecar/fake_1000_v1.sidecar.json
 	uv run python scripts/check_baseline_manifests.py
 
 # ---------------------------------------------------------------------------
