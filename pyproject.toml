@@ -48,6 +48,9 @@ lint = [
     "yamllint==1.38.0",
     "ruff>=0.16,<0.17",
     "mypy>=1.14,<3",
+    # mypy --strict cannot check a yaml.safe_load call without these, and two
+    # enforcement scripts parse YAML.
+    "types-PyYAML>=6,<7",
     "pre-commit>=4.0",
 ]
 
@@ -96,17 +99,44 @@ ignore = [
     "ISC001",  # conflicts with the formatter
     "D203",    # incompatible with D211; D211 is the one we keep
     "D213",    # incompatible with D212; D212 is the one we keep
+    # 3.34's instruction is `select = ALL` and then argue with individual rules
+    # IN WRITING, rather than curating an allowlist nobody can audit. This is
+    # that argument.
+    #
+    # CPY001 wants a copyright header in every file. The repository has a
+    # LICENSE, section 24 governs attribution, and a per-file notice would be a
+    # 70-file diff that says nothing the LICENSE does not. Revisit if section 24
+    # ever requires per-file notices - it currently does not.
+    "CPY001",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests assert; that is their whole job.
-"tests_python/**" = ["S101", "PLR2004", "INP001"]
-"harness/**" = ["S101", "PLR2004", "INP001"]
+#
+# D103 (missing docstring) is dropped for tests specifically. A test's NAME is
+# its documentation here - `test_pairing_fails_on_a_missing_properties_file`
+# says more than a docstring restating it would - and a docstring that restates
+# its function name is exactly the decayed-comment problem 3.37 describes,
+# multiplied by every test. Tests whose reason is not obvious from the name DO
+# carry one; see the section 6.1 blind-spot tests.
+"tests_python/**" = ["S101", "PLR2004", "INP001", "D103"]
+"harness/**" = ["S101", "PLR2004", "INP001", "D103"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["scripts", "dbt_bouncer_checks", "harness", "tests_python"]
+# Only directories that CURRENTLY exist are listed, and each is added in the
+# same commit as its first file -- the discipline C.1 already applies to its
+# `models:` blocks, for the same reason. Naming `harness` and
+# `dbt_bouncer_checks` before they existed made mypy resolve two absent trees to
+# the same module and fail with "Duplicate module named __main__", which reads
+# like a mypy bug and is not one.
+files = ["scripts", "tests_python"]
+explicit_package_bases = true
+# The tests import the scripts by module name, which is how they are invoked in
+# anger (`python scripts/check_yml_pairing.py`). Without this, mypy resolves the
+# imports from the repository root and cannot find them.
+mypy_path = "scripts"
 # dbt-bouncer ships no type information; section 6.2 records that its @check
 # decorator is untyped under --strict and that a narrow per-line ignore is
 # preferable to relaxing disallow_untyped_decorators package-wide.
@@ -114,6 +144,9 @@ warn_unused_ignores = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests_python", "harness"]
-# 3.58: determinism is pinned, not assumed - and asserted in the determinism
-# job rather than merely set here.
-env = ["PYTHONHASHSEED=0", "TZ=UTC", "LC_ALL=C"]
+# 3.58 pins PYTHONHASHSEED / TZ / LC_ALL in the Makefile and the workflow env,
+# and the determinism job ASSERTS them. A pytest `env =` block here would need
+# the pytest-env plugin, and without it the option is silently unknown -- an
+# inert setting that reads like a live one, which is the shape of defect this
+# project keeps finding. Set where 3.58 says to set it, asserted where 3.58 says
+# to assert it, and not restated here.

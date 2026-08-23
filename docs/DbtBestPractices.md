@@ -3731,6 +3731,38 @@ which is the honest state at D.1 step 3 and is what step 4 fixes.
 `repo-checks` reports **4 of 4 enforcement scripts missing** rather than passing quietly. Waiver B-1 covers
 the interval; the point of reporting is that the interval is visible.
 
+#### Step 4a (the enforcement scripts and pre-commit), same day
+
+Five more. Two are defects in this document's own configuration; three are constraints nothing recorded.
+
+11. **`pre-commit` has no `env:` hook field.** A hook may not set an environment variable that way, and
+    pre-commit does **not** error on the unknown key — it is silently ignored. An `env:` block in a hook
+    reads exactly like a live one. Supply variables inside the `entry` instead.
+12. **A YAML folded scalar (`>-`) joins lines with a space, which breaks a JSON literal containing one.**
+    `DBT_ER_THRESHOLDS=[{"auto_merge": 0.9}]` folded into a hook entry split at the space inside the JSON,
+    and bash reported `0.9}]}: command not found`. Keep environment-supplied JSON **space-free**.
+13. **`mypy` was configured against directories that do not exist yet**, and the failure does not say so:
+    naming `harness` and `dbt_bouncer_checks` before either existed produced
+    *"Duplicate module named `__main__`"*, which reads like a mypy bug and is not one. `files:` now lists
+    only directories that exist, and each is added in the same commit as its first file — the discipline
+    C.1 already applies to its `models:` blocks, for the same reason.
+14. **`ruff` under `select = ALL` requires `types-PyYAML`** before `--strict` can check the two enforcement
+    scripts that parse YAML, and it demands a per-file copyright header (`CPY001`) this project does not
+    use. Both are settled in `pyproject.toml` **with the argument written next to them**, which is what
+    3.34 asks for rather than a curated allowlist.
+15. **`pre-commit run --all-files` only considers *tracked* files.** An untracked new script is not linted,
+    so the first run after writing one reports `(no files to check)` and passes. Stage before trusting it.
+
+**`no-commit-to-branch --branch main` is in C.6**, and it is the hook that would have caught `c7ffae6`
+being pushed straight to `main`. It had not landed yet. It has now.
+
+#### The two blind spots §6.1 names are closed in the script, not just noted
+
+`check_yml_pairing.py` shipped with `integration_tests` inside `SKIP_PARTS`, which meant 3.1's *"covers
+**both** project roots"* walked one, and the seed clause — seeds live only in `integration_tests/` — walked
+an empty set and **passed**. Both are fixed, and both have a failing-case test: one asserts a violation in
+the second root is found, the other asserts that walking an empty tree is a **finding rather than a pass**.
+
 #### The standard finding 4 asks for
 
 > **3.72 — A `unit_tests:` block is at the top level of its properties file.** *Mechanism:*
@@ -3904,7 +3936,3 @@ merged, because each needs a decision rather than a drafting pass — B.3 marks 
 > ignore list for that reason (§16).
 
 The first is the one to take next. The others are drafting; that one is architecture.
-
-
-
-
