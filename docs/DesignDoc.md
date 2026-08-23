@@ -3220,9 +3220,19 @@ anything the document told them not to.
 > discovered as a baseline that stopped reproducing. Scoped to DuckDB 1.5.5 per §0; the version is
 > asserted, so a bump reopens the finding by failing.
 >
-> *(One caveat stated rather than buried: the amd64 run used the genuine linux amd64 DuckDB wheel under
-> `docker --platform linux/amd64` on an arm64 host. That is why the gate — not the measurement — is the
-> deliverable: CI's `ubuntu-24.04` is native amd64 and asserts the same reference continuously.)*
+> **Confirmed on native hardware, not only under emulation.** The first CI run of this gate reproduced the
+> reference on `Linux-6.17.0-1022-azure-x86_64-with-glibc2.39` — a native x86_64 GitHub runner — with all
+> 38 harness tests green. The reference therefore holds in **three** independent environments:
+>
+> | environment | how |
+> |---|---|
+> | darwin/arm64 | native, local |
+> | linux/amd64 | `docker --platform linux/amd64` on an arm64 host (emulated) |
+> | linux/amd64 | **native** GitHub `ubuntu-24.04`, glibc 2.39 |
+>
+> The emulated run is recorded because it is what made the answer available before the gate existed; it is
+> **not** what the claim rests on. The claim rests on the native runner asserting the same bits on every
+> build, which is why the gate rather than the measurement was the deliverable.
 
 **Severity:** BLOCKER · **Attacks:** §6.1, A.4, Stage 0.3, M18 · **Scope:** in-scope
 
