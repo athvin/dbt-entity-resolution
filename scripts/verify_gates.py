@@ -346,6 +346,16 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.77",
+        what="set a comparison level's m_probability to zero",
+        mutate="write:fixtures/model_jsons/zero_m.json:"
+        '{"comparisons":[{"output_column_name":"c","comparison_levels":'
+        '[{"sql_condition":"\\"a_l\\" = \\"a_r\\"","m_probability":0},'
+        '{"sql_condition":"ELSE"}]}]}',
+        command=("python", "scripts/er_sidecar.py", "fixtures/model_jsons/zero_m.json"),
+        expect="ER-042",
+    ),
+    Injection(
         standard="3.76",
         what="let the committed sidecar drift from its model JSON",
         mutate="noop",

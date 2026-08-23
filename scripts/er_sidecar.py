@@ -352,6 +352,8 @@ def validate(raw: str, bounds: dict[str, int] | None = None) -> dict[str, Any]:
         )
 
     findings = _check_bounds(model, raw_bytes, effective)
+    findings.extend(_check_output_column_names(model))
+    findings.extend(_check_probabilities(model))
     conditions = list(_sql_conditions(model))
     for where, condition in conditions:
         findings.extend(_check_condition(where, condition))
@@ -389,7 +391,134 @@ def build(raw: str, bounds: dict[str, int] | None = None) -> dict[str, Any]:
         "levels_validated": validated["levels_validated"],
         "comparisons": validated["comparisons"],
         "resolved": resolve(validated["model"]),
+        # M1 is reported rather than rejected: an asymmetric level is legitimate
+        # in a link job whose orientation is settled. What is not legitimate is
+        # not knowing, so it travels with the artefact.
+        "asymmetric_levels": _check_symmetry(validated["model"]),
     }
+
+
+def _check_output_column_names(model: dict[str, Any]) -> list[str]:
+    """M2: uniqueness AFTER `.replace(" ", "_")` normalisation.
+
+    `int_comparison_vectors` emits one `gamma_<name>` per comparison and
+    `int_scored_pairs` one `bf_<name>`, so two comparisons whose names normalise
+    to the same identifier silently collapse two columns into one -- and because
+    the column set is data (M2), no contract or unit test would catch it.
+    """
+    seen: dict[str, str] = {}
+    findings: list[str] = []
+    for index, comparison in enumerate(model.get("comparisons") or []):
+        raw = comparison.get("output_column_name") or f"comparison[{index}]"
+        normalised = str(raw).replace(" ", "_")
+        if normalised in seen and seen[normalised] != raw:
+            findings.append(
+                f"ER-040: `{raw}` and `{seen[normalised]}` both normalise to "
+                f"`{normalised}`. They would emit the same gamma_ and bf_ columns, "
+                f"collapsing two comparisons into one (M2)."
+            )
+        elif normalised in seen:
+            findings.append(f"ER-040: `{raw}` is declared more than once (M2).")
+        seen[normalised] = raw
+    return findings
+
+
+def _check_probabilities(model: dict[str, Any]) -> list[str]:
+    """M13: a PRESENT zero is a hard error; an ABSENT value is valid input.
+
+    The distinction is the whole finding. Splink's save guard is
+    `if self._m_probability and self._m_is_trained` (`comparison_level.py:654-658`),
+    whose truthiness drops `0.0` **and** not-observed alike -- so a routine
+    trained model legitimately omits `m_probability` on some levels, and §3.4
+    documents that reload substitutes `_default_m_values`. M13 measured 3 of 14
+    non-null levels missing `m_probability` in an ordinary 400-row training.
+
+    Rejecting absence would red the nightly model-varying job on a perfectly
+    ordinary Splink artefact -- and M13's failure scenario is someone then
+    "fixing" it by weakening the validator, losing the guard on genuinely
+    malformed input.
+
+    **`1.0` exactly is valid.** The same production model carries three levels at
+    `m_probability == 1.0`, which a naive "probabilities in (0,1)" open-interval
+    check rejects.
+    """
+    findings: list[str] = []
+    for c_index, comparison in enumerate(model.get("comparisons") or []):
+        name = comparison.get("output_column_name", f"comparison[{c_index}]")
+        for l_index, level in enumerate(comparison.get("comparison_levels") or []):
+            where = f"{name}.level[{l_index}]"
+            for field in ("m_probability", "u_probability"):
+                value = level.get(field)
+                if value is None:
+                    continue  # ABSENT is valid input -- see the docstring.
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    findings.append(f"ER-041: {where} has a non-numeric `{field}`: {value!r}.")
+                elif value == 0:
+                    findings.append(
+                        f"ER-042: {where} has `{field} = 0`, which is a HARD error: "
+                        f"a zero bayes factor makes the pair unscoreable and log2(0) "
+                        f"is undefined. Note that an ABSENT {field} is valid input "
+                        f"and renders _default_m_values (M13)."
+                    )
+                elif not 0 <= value <= 1:
+                    findings.append(f"ER-043: {where} has `{field} = {value}`, outside [0, 1].")
+    return findings
+
+
+_SIDE_SUFFIXES = ("_l", "_r")
+
+
+def _check_symmetry(model: dict[str, Any]) -> list[str]:
+    """M1: asymmetric levels, which make gamma orientation-dependent.
+
+    `[RECON]` `ColumnsReversedLevel('forename','surname')` renders
+    `"forename_l" = "surname_r"` -- and **`symmetrical: bool = False` is the
+    default** (`comparison_level_library.py:363-397`). Executed in DuckDB on one
+    pair, the Splink orientation gives `false` and the flipped orientation
+    `true`: same pair, opposite gamma.
+
+    That kills S2's *"match the set, not the orientation"* escape, because a
+    canonicalised set comparison at Stage 3 **hides** a real Stage-4 divergence
+    rather than deferring it. Dormant on dedupe-only configs with symmetric
+    levels -- i.e. until the first link job or the first `ColumnsReversed` level.
+
+    Reported, not rejected: an asymmetric level is legitimate in a link job that
+    has settled its orientation (A.2 C4, Open Question 3). What is not legitimate
+    is not knowing.
+    """
+    import sqlglot  # noqa: PLC0415
+    from sqlglot import exp  # noqa: PLC0415
+
+    findings: list[str] = []
+    for c_index, comparison in enumerate(model.get("comparisons") or []):
+        name = comparison.get("output_column_name", f"comparison[{c_index}]")
+        for l_index, level in enumerate(comparison.get("comparison_levels") or []):
+            condition = level.get("sql_condition")
+            if not isinstance(condition, str) or condition.strip().upper() == ELSE_SENTINEL:
+                continue
+            try:
+                tree = sqlglot.parse_one(condition.lower(), read="duckdb")
+            except Exception:  # noqa: BLE001, S112 - validation reports parse errors
+                continue
+            if tree is None:
+                continue
+
+            bases: dict[str, set[str]] = {"_l": set(), "_r": set()}
+            for column in tree.find_all(exp.Column):
+                output = str(column.output_name).lower()
+                for suffix in _SIDE_SUFFIXES:
+                    if output.endswith(suffix):
+                        bases[suffix].add(output[: -len(suffix)])
+            if bases["_l"] != bases["_r"]:
+                findings.append(
+                    f"ER-044: {name}.level[{l_index}] is ASYMMETRIC -- left columns "
+                    f"{sorted(bases['_l'])} against right {sorted(bases['_r'])}. Gamma "
+                    f"is not orientation-invariant here, so canonicalising the pair "
+                    f"set at Stage 3 would HIDE a Stage-4 divergence rather than "
+                    f"defer it (M1). Legitimate in a link job with a settled "
+                    f"orientation; record it in PARITY.md."
+                )
+    return findings
 
 
 def resolve(model: dict[str, Any]) -> dict[str, Any]:

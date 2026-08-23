@@ -293,6 +293,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 
 | | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.75 | The model JSON passes the §1.5 trust boundary before anything builds | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact | P + CI | Non-zero exit naming the level and the function |
+| 3.77 | Stage-1 model-JSON lints: asymmetric levels reported (M1), `output_column_name` unique after `.replace(" ", "_")` (M2), a **present** `m`/`u` of 0 is a hard error while an **absent** one is valid input (M13) | `scripts/er_sidecar.py` -- the same pass that validates and resolves | P + CI | Non-zero exit naming the comparison and the level |
 | 3.76 | The A.2 sidecar regenerates byte-identically from its model JSON | `scripts/er_sidecar.py --check` compares the committed artefact against a fresh resolution; resolution is **Splink's own**, never a reimplementation | P + CI | Non-zero exit naming the drifted file |
 
 > **On 3.75 — matching the tree, and matching EVERY alias.** §1.5 requires validation against the parsed
@@ -3565,6 +3566,24 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     calls Splink's own resolution rather than reimplementing it** — reimplementing the CNF analysis in
     Python would be the Jinja mistake one language along — and a test asserts structurally that it still
     does, so a future "simplification" that inlines the logic fails.
+
+58. **M13's real content is a distinction, not a check.** *Absent* `m_probability` is valid input;
+    *present and zero* is a hard error. Splink's save guard is
+    `if self._m_probability and self._m_is_trained` — a truthiness test that drops `0.0` **and**
+    not-observed alike — so an ordinary trained model legitimately omits the field, and M13 measured 3 of
+    14 non-null levels missing it in a routine 400-row training. A validator that rejected absence would
+    red the nightly model-varying job on a perfectly good Splink artefact, and M13's own failure scenario
+    is what happens next: someone weakens the validator and loses the guard on genuinely malformed input.
+    **And `1.0` exactly is valid** — the same production model carries three levels at `m_probability ==
+    1.0`, which a naive open-interval `(0,1)` check rejects. Both directions are tested.
+
+59. **M1 is reported, not rejected — and it is dormant on the only fixture that exists.** An asymmetric
+    level is legitimate in a link job whose orientation is settled; what is not legitimate is not knowing,
+    so the finding travels with the sidecar artefact rather than failing the build. It finds **zero** on
+    the frozen `dedupe_only` model, exactly as M1 predicts (*"dormant until the first link job or the
+    first `ColumnsReversed` level"*) — which means the check has no subject on the only model in the
+    repository. Its tests supply one, using M1's own measured example: `ColumnsReversedLevel` renders
+    `"forename_l" = "surname_r"`, and `symmetrical=False` is the **default**.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
