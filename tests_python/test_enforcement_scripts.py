@@ -579,7 +579,9 @@ def test_divergence_log_rejects_an_undeclared_missing_parity_file(tmp_path: Path
     """3.50: absence must be declared, never silent."""
     scratch = _mirror(tmp_path)
     reg = scratch / "scripts" / "pending_subjects.yml"
-    reg.write_text(reg.read_text().replace("  - path: PARITY.md\n", "  - path: PARITY.disabled\n"))
+    reg.write_text(
+        reg.read_text().replace("  - path: docs/PARITY.md\n", "  - path: docs/PARITY.disabled\n")
+    )
     errors = check_divergence_log.check(scratch)
     assert any("not declared pending (3.50" in e for e in errors)
 

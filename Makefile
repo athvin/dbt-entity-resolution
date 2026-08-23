@@ -55,6 +55,7 @@ help:
 	@echo "  bouncer    all three artifact tiers"
 	@echo "  python-tests  pytest over scripts/ and dbt_bouncer_checks/ (3.57)"
 	@echo "  verify-gates  prove each standard FAILS when violated (3.38)"
+	@echo "  comparator-sensitivity  no mutant survives (3.46) -- NEVER auto-rerun"
 	@echo "  precommit  every pre-commit hook, over all files"
 	@echo "  ci         everything CI runs, in CI's order"
 	@echo "  capacity   measured bytes/pair -> er_max_pairs (D11 rec 5)"
@@ -144,6 +145,13 @@ repo-checks:
 # FAILING-case test: section 0 is explicit that "observed to pass" is never
 # "observed to fail when violated", and only the second shows a gate enforces
 # anything.
+# 3.46 / section 12.7. NEVER auto-rerun this: it is one of the three never-retry
+# gates, and a surviving mutant means the comparator cannot detect a real
+# divergence -- re-running only loses the evidence of which one survived.
+comparator-sensitivity:
+	@echo "== comparator sensitivity (3.46) -- no mutant may survive =="
+	uv run pytest harness -q
+
 python-tests:
 	uv run pytest tests_python -q
 
@@ -203,7 +211,7 @@ baseline:
 # arbitrary: `dbt docs generate` must precede the catalog checks because they
 # need a catalog built against a real database, and the parity harness must run
 # after dbt has EXITED because DuckDB takes a process-level lock.
-ci: lint python-tests verify-gates build docs bouncer
+ci: lint python-tests comparator-sensitivity verify-gates build docs bouncer
 
 clean:
 	$(DBT) clean || true

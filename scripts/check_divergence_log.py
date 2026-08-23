@@ -33,7 +33,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 LOG_PATH = "docs/divergence-log.md"
-PARITY_PATH = "PARITY.md"
+# Section 5's tree places it at docs/, and CODEOWNERS names it there.
+PARITY_PATH = "docs/PARITY.md"
 
 # Where a pinning test may live. `tests/` is dbt's test-paths; `harness/` holds
 # the pytest comparators. Never `tests_python/`, which is the enforcement

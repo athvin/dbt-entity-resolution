@@ -33,7 +33,7 @@ pending:
       on purpose and that is a logged divergence the day it lands.
     since: 2026-08-23
 
-  - path: PARITY.md
+  - path: docs/PARITY.md
     check: check_divergence_log.py
     created_by: "PE-1 (section 20.3); DesignDoc DoD 5 requires it before cutover."
     since: 2026-08-23
@@ -54,12 +54,9 @@ pending:
   # is still here, so the ledger cannot outlive the gap it records.
   - standard: "3.25"
     check: check_standards_matrix.py
-    created_by: "PC-2 -- the content-hash determinism suite lands with Stage 0.7."
-    since: 2026-08-23
-
-  - standard: "3.46"
-    check: check_standards_matrix.py
-    created_by: "PC-2 -- Stage 0.7's comparator sensitivity suite IS this mechanism."
+    created_by: >-
+      PD-2 -- output stability is hashed over a built relation, so it needs models.
+      Stage 0.7 proves the comparator can fail; that is 3.46, a different rule.
     since: 2026-08-23
 
   - standard: "3.60"

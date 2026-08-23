@@ -121,6 +121,30 @@ jobs:
       # "observed to pass" is never "observed to fail when violated".
       - run: uv run pytest tests_python -q
 
+  comparator-sensitivity:
+    name: comparator-sensitivity (blocking, NEVER auto-rerun)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv python install 3.12
+      - run: uv sync --locked --all-groups
+      # 3.46 / section 12.7. Every parity claim this project makes rests on
+      # comparator code that nothing else proves can fail.
+      #
+      # This is one of the three NEVER-RETRY gates (section 21), with parity and
+      # determinism. A surviving mutant is a product defect until proven
+      # otherwise -- re-running it only hides which mutant survived.
+      - run: uv run pytest harness -q
+
   build:
     name: build + tests (blocking)
     runs-on: ubuntu-24.04
@@ -270,7 +294,7 @@ jobs:
     name: ci-gate
     if: always()
     runs-on: ubuntu-24.04
-    needs: [lint, python-tests, build, bouncer, verify-gates]
+    needs: [lint, python-tests, comparator-sensitivity, build, bouncer, verify-gates]
     permissions:
       contents: read
     steps:
