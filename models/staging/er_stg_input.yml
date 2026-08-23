@@ -1,0 +1,123 @@
+---
+version: 2
+
+models:
+  - name: er_stg_input
+    description: >
+      **Purpose**. The staged input corpus: every record this engine resolves,
+      exactly as the consumer supplied it. Splink's `__splink__df_concat`
+      equivalent. Every later stage reads from here rather than from the
+      consumer's relation directly, so section 2.0's input contract is enforced
+      in exactly one place.
+
+
+      **Grain**. One row per input record, keyed by `unique_id`. Section 2.0
+      requires that key VARCHAR, NOT NULL and UNIQUE -- the last because D3's
+      strict `l.<uid> < r.<uid>` means two records sharing an id never pair
+      with each other (G9).
+
+
+      **Upstream**. `er_input_relation`, named by the consumer. The package
+      ships ZERO sources (M4b), and v1 arity is one table: Stage 12.1 forbids
+      `source_dataset`, and when v2 needs a union the consumer owns it, since
+      section 3.5 needs the GLOBAL concat and only they know what global means.
+
+
+      **Splink parity**. Equals Splink's concat excluding `__splink_salt` (S1) --
+      the pair set and match_keys are provably invariant under salting, so it is
+      simply not selected. Stage 2's acceptance criterion.
+
+
+      **Determinism**. A bare projection: no ordering, no aggregation, no
+      floating point. Deterministic by construction rather than by assertion.
+
+
+      **Caveats**. NOT a cleaning layer, and the reason is parity rather than
+      hygiene. D8: `ColumnExpression` transforms are applied INLINE inside the
+      comparison CASE, never in the concat table -- verified, the gamma CASE
+      carries `SUBSTRING(LOWER("first_name_l"), 1, 3)` while the projection
+      feeding it selects the RAW column. Hoisting a transform here would apply
+      it twice and diverge on every level that uses one. A missing column fails
+      at COMPILE time naming the column, rather than as a `Binder Error` from
+      inside a generated CASE.
+
+    config:
+      contract:
+        enforced: true
+
+    constraints:
+      - type: primary_key
+        columns: [unique_id]
+
+    columns:
+      - name: unique_id
+        data_type: varchar
+        description: >
+          The record identifier. Section 2.0 requires VARCHAR, NOT NULL and
+          UNIQUE. The uniqueness requirement is G9's finding: D3's strict
+          `l.<uid> < r.<uid>` means two records sharing an id NEVER pair with
+          each other, so a duplicate silently suppresses the match most likely
+          to matter.
+        constraints:
+          - type: not_null
+        data_tests: [unique]
+      - name: first_name
+        data_type: varchar
+        description: Given name, as supplied. No case folding -- D8.
+      - name: surname
+        data_type: varchar
+        description: Family name, as supplied.
+      - name: dob
+        data_type: varchar
+        description: >
+          Date of birth as supplied. Kept as VARCHAR because `try_strptime` is
+          applied inside the comparison CASE, not here.
+      - name: city
+        data_type: varchar
+        description: City of residence, as supplied.
+      - name: email
+        data_type: varchar
+        description: Email address, as supplied.
+      - name: cluster
+        data_type: varchar
+        description: >
+          Ground-truth cluster label (M12), carried through so the quality
+          floors have something to measure. Never read by the resolution
+          itself.
+
+unit_tests:
+  - name: stg_input_is_a_bare_passthrough
+    description: >
+      D8's whole content: values arrive unchanged. A test that let a transform
+      through here would not fail until Stage 4 diverged.
+
+
+      Note the coupling: this model's upstream is named by `er_input_relation`,
+      a var, so `given.input` must name whatever that var RESOLVES to rather
+      than the var itself. A model whose upstream is configuration cannot have
+      a unit test that is portable across consumers -- which is M2's family of
+      problem arriving at the fixture rather than at the column list.
+    model: er_stg_input
+    given:
+      - input: ref('er_fake_1000')
+        format: sql
+        rows: |
+          select
+              cast('a-1' as varchar) as unique_id,
+              cast('Robert' as varchar) as first_name,
+              cast('Alan' as varchar) as surname,
+              cast('1971-06-24' as varchar) as dob,
+              cast('London' as varchar) as city,
+              cast('r@smith.net' as varchar) as email,
+              cast('c1' as varchar) as cluster
+    expect:
+      format: sql
+      rows: |
+        select
+            cast('a-1' as varchar) as unique_id,
+            cast('Robert' as varchar) as first_name,
+            cast('Alan' as varchar) as surname,
+            cast('1971-06-24' as varchar) as dob,
+            cast('London' as varchar) as city,
+            cast('r@smith.net' as varchar) as email,
+            cast('c1' as varchar) as cluster

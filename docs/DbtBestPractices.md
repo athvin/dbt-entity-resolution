@@ -3646,6 +3646,24 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     between 0.75 and 0.85 instead of 1.0. §3.5's own one-line test catches it directly, and it is far
     cheaper than comparing frequencies value by value.
 
+67. **The package root stopped being independently parseable the moment a model needed consumer
+    configuration, and that is structural rather than a regression.** M4b makes the package ship **zero
+    sources**: a consumer names their own relation through `er_input_relation`. So the first real model,
+    `er_stg_input`, correctly refuses to compile at the package root — `ER-060` — and `dbt parse`,
+    `sqlfluff` and the compile gate all failed there. **The wrong fix is a default**: giving
+    `er_input_relation` a placeholder would be exactly the "inert config that reads as live" defect this
+    repository keeps finding, and §5 already names `integration_tests/` as *"the RUNNABLE project"*. All
+    three now target it. The package's own SQL and YAML are still covered, because `integration_tests`
+    installs the package and every node is in that manifest.
+
+68. **sqlfluff resolves a file by its path relative to `project_dir`, and falls back silently when it
+    cannot.** Pointing `project_dir` at the runnable project while still passing `models/` lints a path
+    that project does not know — so the templater quietly reverted to the package root's configuration and
+    hit `ER-060` again. The models are now linted through the **installed package path**,
+    `integration_tests/dbt_packages/dbt_er/models`, which is the same files compiled with a consumer's
+    configuration. A silent fallback to a different config is the same shape as every other finding here:
+    the tool reported a failure that was really about where it was looking, not about what it found.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`

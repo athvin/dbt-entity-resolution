@@ -95,7 +95,16 @@ lint: platform-note
 	else \
 		echo "mypy: no Python sources yet -- skipping, and saying so."; \
 	fi
-	$(DBT) parse
+	@# ONLY the runnable project is parsed. The package root ships zero sources
+	@# by design (M4b), so `er_input_relation` is empty there and `er_stg_input`
+	@# correctly refuses to compile (`ER-060`) -- which means the package root
+	@# stopped being independently parseable the moment a model required
+	@# consumer configuration. That is a structural consequence of M4b meeting
+	@# the first real model, not a regression, and section 5 already names
+	@# `integration_tests/` as "the RUNNABLE project".
+	@#
+	@# The package's own YAML and SQL are still parsed: integration_tests
+	@# installs dbt_er, so every package node is in this manifest.
 	$(DBT) parse $(IT)
 	@# `dbt parse` does NOT execute on-run-start hooks, so it does not fire the
 	@# compile gate -- despite section 2 calling that gate "compile". C.7 carries
@@ -108,7 +117,17 @@ lint: platform-note
 	@# yet. Named explicitly rather than mkdir'd into existence: an empty
 	@# directory that exists only to satisfy a command is a subject the gate
 	@# cannot actually check.
-	@paths="models"; \
+	@# The models are linted through the INSTALLED PACKAGE PATH, not `models/`.
+	@# The package ships zero sources by design (M4b), so `er_input_relation` is
+	@# empty at the root and `er_stg_input` correctly refuses to compile there
+	@# (`ER-060`). sqlfluff's dbt templater resolves a file by its path relative
+	@# to `project_dir`, and `models/...` is not a path the runnable project
+	@# knows -- so it silently fell back to the package root's config and hit
+	@# our own compile error.
+	@#
+	@# The fix is NOT to give the var a fake default. That is precisely the
+	@# "inert config that reads as live" defect this repository keeps finding.
+	@paths="integration_tests/dbt_packages/dbt_er/models"; \
 	if [ -d tests ] && compgen -G "tests/*.sql" > /dev/null; then \
 		paths="$$paths tests"; \
 	else \

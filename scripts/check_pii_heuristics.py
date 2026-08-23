@@ -43,7 +43,16 @@ from _er_paths import ROOT, rel
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCANNED_DIRS = ("seeds", "fixtures", "harness")
+# BOTH project roots. `integration_tests/seeds/` is where the runnable project's
+# seeds live, and scanning only the root's `seeds/` left the only seed in the
+# repository invisible -- the same blind spot section 6.1 diagnoses in
+# `check_yml_pairing.py`, reproduced here and found the moment a seed existed.
+SCANNED_DIRS = (
+    "seeds",
+    "fixtures",
+    "harness",
+    "integration_tests/seeds",
+)
 DATA_SUFFIXES = (".csv", ".json", ".parquet")
 
 # If the walk finds fewer than this, the check has lost its subject rather than
@@ -116,12 +125,30 @@ def _data_files(root: Path) -> list[Path]:
 
 
 def _declared_synthetic(path: Path) -> bool:
-    """Report whether this file's sidecar manifest asserts `synthetic: true`."""
+    """Report whether this file is declared synthetic, wherever that belongs.
+
+    Two homes, because a dbt **seed** already has a properties file and giving
+    it a second sidecar would be two files describing one artefact:
+
+    * `seeds/` -- the dbt properties file's `meta: {synthetic: true}`, which is
+      where seed metadata belongs and where a reader will look for it.
+    * everywhere else -- a `<file>.manifest.yml` sidecar, since fixtures and
+      baselines have no dbt properties file to carry it.
+    """
     sidecar = path.with_suffix(path.suffix + ".manifest.yml")
-    if not sidecar.is_file():
-        return False
-    loaded = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
-    return isinstance(loaded, dict) and loaded.get("synthetic") is True
+    if sidecar.is_file():
+        loaded = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict) and loaded.get("synthetic") is True:
+            return True
+
+    properties = path.with_suffix(".yml")
+    if properties.is_file():
+        loaded = yaml.safe_load(properties.read_text(encoding="utf-8")) or {}
+        for group in ("seeds", "models", "sources"):
+            for entry in loaded.get(group) or []:
+                if isinstance(entry, dict) and (entry.get("meta") or {}).get("synthetic") is True:
+                    return True
+    return False
 
 
 def _scan_text(name: str, text: str) -> list[str]:
