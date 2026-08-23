@@ -43,7 +43,7 @@ UNAME_M := $(shell uname -m)
 IS_AMD64 := $(filter x86_64 amd64,$(UNAME_M))
 
 .PHONY: help install lint build docs bouncer ci capacity baseline \
-        clean platform-note
+        clean platform-note python-tests precommit
 
 help:
 	@echo "dbt-er targets (section 17 -- each is also a CI step)"
@@ -53,6 +53,8 @@ help:
 	@echo "  build      dbt seed && dbt build --full-refresh (unit + data tests)"
 	@echo "  docs       catalog.json, for the bouncer catalog tier"
 	@echo "  bouncer    all three artifact tiers"
+	@echo "  python-tests  pytest over scripts/ and dbt_bouncer_checks/ (3.57)"
+	@echo "  precommit  every pre-commit hook, over all files"
 	@echo "  ci         everything CI runs, in CI's order"
 	@echo "  capacity   measured bytes/pair -> er_max_pairs (D11 rec 5)"
 	@echo "  baseline   regenerate Splink baselines AND their manifests"
@@ -128,6 +130,16 @@ repo-checks:
 		echo "Waiver B-1 (Appendix D.1) covers the bootstrap interval."; \
 	fi
 
+# 3.57 / section 15's `python-tests` job. Every enforcement script ships a
+# FAILING-case test: section 0 is explicit that "observed to pass" is never
+# "observed to fail when violated", and only the second shows a gate enforces
+# anything.
+python-tests:
+	uv run pytest tests_python -q
+
+precommit:
+	uv run pre-commit run --all-files
+
 # ---------------------------------------------------------------------------
 build:
 	@if compgen -G "integration_tests/seeds/*.csv" > /dev/null; then \
@@ -170,7 +182,7 @@ baseline:
 # arbitrary: `dbt docs generate` must precede the catalog checks because they
 # need a catalog built against a real database, and the parity harness must run
 # after dbt has EXITED because DuckDB takes a process-level lock.
-ci: lint build docs bouncer
+ci: lint python-tests build docs bouncer
 
 clean:
 	$(DBT) clean || true

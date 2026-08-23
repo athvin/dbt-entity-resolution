@@ -1,0 +1,148 @@
+---
+# C.6, with its v2 deltas applied. dbt-bouncer is deliberately CI-only: its
+# checks need a manifest, a catalog and run results, so in pre-commit it would
+# either use a stale manifest -- a false green -- or force a full build on every
+# commit.
+minimum_pre_commit_version: "4.0.0"
+default_language_version:
+  python: python3.12
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # C.6 delta 3: tightened from the default. 4 MB of binary per file,
+      # accepted into git history permanently, is not a limit anyone chose --
+      # and section 20.1 puts the reviewable artefact in a diff report, not in
+      # the parquet.
+      - id: check-added-large-files
+        args: [--maxkb=4096]
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: trailing-whitespace
+      # This is the hook that would have caught c7ffae6 being pushed straight to
+      # main. It had not landed yet; see LOOP-STATE.md's 2026-08-23 entry.
+      - id: no-commit-to-branch
+        args: [--branch, main]
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        # dbt_project.yml and profiles.yml carry Jinja, which is not valid YAML
+        # until it is rendered.
+        exclude: ^(dbt_project\.yml|profiles/profiles\.yml|integration_tests/dbt_project\.yml)$
+      # C.6 delta 1: 3.55, section 20.4.
+      - id: detect-private-key
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        args: [--strict, --config-file, .yamllint.yml]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.3
+    hooks:
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      # ---------------------------------------------------------------------
+      # The four checks nothing off the shelf performs.
+      #
+      # C.6 delta 6 (RC51): `files:` is DROPPED from the first two. With
+      # `pass_filenames: false` the pattern still decides whether the hook runs
+      # at all, and `^(models|macros|tests|seeds)/` matches nothing under
+      # integration_tests/ -- so a commit touching the only seed the project has
+      # never triggered the pairing check, however correctly the script walks
+      # both roots once invoked. A gate that cannot trigger is section 6.1's
+      # "check whose subject has disappeared", one layer up.
+      # ---------------------------------------------------------------------
+      - id: er-yml-pairing
+        name: "1:1 .sql <-> .yml pairing (both project roots)"
+        entry: python scripts/check_yml_pairing.py
+        language: system
+        pass_filenames: false
+
+      - id: er-no-nondeterminism
+        name: "no non-deterministic Jinja in model code (both project roots)"
+        entry: python scripts/check_no_nondeterminism.py
+        language: system
+        pass_filenames: false
+
+      - id: er-flags-parity
+        name: "flags: identical in both dbt_project.yml files"
+        entry: python scripts/check_flags_parity.py
+        language: system
+        pass_filenames: false
+
+      - id: er-root-packages-minimal
+        name: "root packages.yml stays minimal"
+        entry: python scripts/check_root_packages_minimal.py
+        language: system
+        pass_filenames: false
+
+      # C.6 delta 5: the enforcement scripts are covered by their own suite
+      # (3.57). A script with no failing-case test has not been shown to fire.
+      - id: er-python-tests
+        name: "pytest over the enforcement scripts"
+        entry: pytest tests_python -q
+        language: system
+        pass_filenames: false
+        files: ^(scripts|tests_python|dbt_bouncer_checks)/.*\.py$
+
+      # C.6 delta 2: .gitignore alone loses to `git add -f`. Both halves are
+      # required; neither is enough (3.54).
+      - id: er-no-build-artefacts
+        name: "no build artefacts staged"
+        entry: >-
+          bash -c 'pat="^(target|integration_tests/target|dbt_packages)/";
+          pat="$pat|^(integration_tests/dbt_packages|exports)/|[.]duckdb$";
+          bad=$(git diff --cached --name-only | grep -E "$pat" || true);
+          test -z "$bad" || { echo "staged build artefact(s):"; echo "$bad"; exit 1; }'
+        language: system
+        pass_filenames: false
+
+      # NOT the upstream sqlfluff hook: it passes filenames, and the dbt
+      # templater re-parses the ENTIRE project per invocation. One project-wide
+      # parse instead.
+      #
+      # `tests` is omitted until it holds singular tests -- sqlfluff errors on a
+      # path that does not exist, and mkdir'ing an empty one would hand the gate
+      # a subject it cannot check. See Appendix D.0 finding 10.
+      #
+      # DBT_ER_THRESHOLDS is supplied here for the same reason `make lint`
+      # supplies it: sqlfluff has no --vars, and the package deliberately has no
+      # default threshold (DesignDoc 1.8, DR-22). Section 11.1's claim that "a
+      # bare `sqlfluff lint` works with no setup" rested on that default. This is
+      # a LINT value, not a production one -- the whole point of DR-22 is that no
+      # threshold is right for a corpus you have not seen.
+      - id: sqlfluff-lint
+        name: "sqlfluff lint (duckdb + dbt templater)"
+        entry: >-
+          bash -c 'DBT_ER_THRESHOLDS="[{\"auto_merge\":0.9}]"
+          sqlfluff lint --processes 0 --disable-progress-bar models'
+        language: system
+        types: [sql]
+        pass_filenames: false
+        require_serial: true
+
+      - id: sqlfluffignore-cap
+        name: ".sqlfluffignore may not grow new model exemptions"
+        entry: >-
+          bash -c 'n=$(grep -c "^models/" .sqlfluffignore || true);
+          test "$n" -le 2 || { echo "New model exemption in .sqlfluffignore"; exit 1; }'
+        language: system
+        pass_filenames: false
+        files: ^\.sqlfluffignore$
+
+      # C.6 delta 4. er-standards-matrix (3.39), er-verified-markers (3.44) and
+      # er-baseline-manifests (3.62) belong here and are NOT listed yet: their
+      # scripts arrive in Appendix D.1 step 4, and er-baseline-manifests has no
+      # subject until Stage 0.3 produces a baseline. A hook entry pointing at a
+      # missing script fails every commit; a hook entry that passes because it
+      # found nothing is worse. Waiver B-1 covers the interval.
