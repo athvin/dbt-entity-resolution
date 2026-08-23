@@ -1,0 +1,44 @@
+---
+version: 2
+
+macros:
+  - name: er_blocking_sql
+    description: >
+      D2's blocking SQL (Stage 1, critical path). Emits one `select` per
+      blocking rule, combined with `UNION ALL`, each excluding every PRECEDING
+      rule through a single `AND NOT ( ... OR ... )` over `coalesce`-wrapped
+      predicates.
+
+
+      v1 described this wrong -- "rule 2 AND NOT (rule 1)", one exclusion per
+      preceding rule -- and D2 records the correction. The rendered output is
+      compared against Splink 4.0.16's own generator output, snapshotted at
+      `fixtures/snapshots/blocking_fake_1000_v1.sql`, so this is a parity test
+      rather than a formatting test (3.78).
+
+
+      Four details are load-bearing, each a way to be silently wrong:
+      `coalesce((<rule>), false)`, without which a NULL in a preceding rule
+      DELETES pairs; `match_key` as a VARCHAR literal, which section 12.7
+      carries a mutant for; `UNION ALL` never `UNION`; and `l.<uid> < r.<uid>`
+      strictly, which is D3's canonical ordering and G9's cost.
+
+    arguments:
+      - name: blocking_rules
+        type: list
+        description: >
+          Rendered SQL predicates, in order. Order is semantic: each rule
+          excludes all those before it. An empty list raises `ER-050`, because
+          a blocking stage generating nothing produces section 12.7's
+          zero-rows-to-zero-rows comparison.
+      - name: left_relation
+        type: string
+        description: The left-hand relation, aliased `l`.
+      - name: right_relation
+        type: string
+        description: The right-hand relation, aliased `r`.
+      - name: unique_id
+        type: string
+        description: >
+          The identifier column (section 2.0 lets a consumer name it).
+          Defaults to `unique_id`.

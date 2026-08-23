@@ -293,6 +293,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 
 | | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.75 | The model JSON passes the §1.5 trust boundary before anything builds | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact | P + CI | Non-zero exit naming the level and the function |
+| 3.78 | Generated SQL matches Splink's own, not a transcription of the prose | `tests_python/test_blocking_sql.py` renders the macro and compares against `fixtures/snapshots/*.sql`, captured from Splink's generator | CI | Test fails showing the first divergent token |
 | 3.77 | Stage-1 model-JSON lints: asymmetric levels reported (M1), `output_column_name` unique after `.replace(" ", "_")` (M2), a **present** `m`/`u` of 0 is a hard error while an **absent** one is valid input (M13) | `scripts/er_sidecar.py` -- the same pass that validates and resolves | P + CI | Non-zero exit naming the comparison and the level |
 | 3.76 | The A.2 sidecar regenerates byte-identically from its model JSON | `scripts/er_sidecar.py --check` compares the committed artefact against a fresh resolution; resolution is **Splink's own**, never a reimplementation | P + CI | Non-zero exit naming the drifted file |
 
@@ -3584,6 +3585,20 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     first `ColumnsReversed` level"*) — which means the check has no subject on the only model in the
     repository. Its tests supply one, using M1's own measured example: `ColumnsReversedLevel` renders
     `"forename_l" = "surname_r"`, and `symmetrical=False` is the **default**.
+
+60. **The first real parity result, and it confirms D2 against v1.** `er_blocking_sql` renders SQL
+    **token-for-token equivalent** to Splink 4.0.16's own `block_using_rules_sqls` output for the frozen
+    model. That settles the v1 error D2 records from evidence rather than from reading: v1 described
+    *"rule 2 `AND NOT` (rule 1)"* — one exclusion per preceding rule — and the real generator emits a
+    **single** `AND NOT ( … OR … )` over every preceding rule. Four rules produce **three** exclusion
+    clauses wrapping **six** `coalesce`d predicates, and a test asserts those counts, because the wrong
+    shape still produces plausible pairs in plausible quantities.
+
+61. **The snapshot is Splink's output, not a transcription — which is what makes it a parity test.**
+    `fixtures/snapshots/blocking_fake_1000_v1.sql` was captured from the generator, so if Splink changes
+    shape the snapshot changes and the macro is *shown* to have diverged. A snapshot written by hand from
+    the document would only ever test that the macro matches what someone believed. It carries the same
+    provenance manifest as a parquet baseline, and 3.62 now covers `.sql` for that reason.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both

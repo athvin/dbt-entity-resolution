@@ -346,6 +346,20 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.78",
+        what="drop the coalesce wrapper from the blocking exclusion",
+        mutate="noop",
+        command=("pytest", "tests_python/test_blocking_sql.py", "-q", "--no-header"),
+        expect="assert",
+        edits=(
+            (
+                "macros/sql_gen/er_blocking_sql.sql",
+                "coalesce(({{ previous }}),false)",
+                "({{ previous }})",
+            ),
+        ),
+    ),
+    Injection(
         standard="3.77",
         what="set a comparison level's m_probability to zero",
         mutate="write:fixtures/model_jsons/zero_m.json:"
