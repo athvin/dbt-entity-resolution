@@ -105,7 +105,7 @@ def _evaluate(expression: str) -> list[object]:
     try:
         con.execute('create table cv (gamma_city int, "tf_city_l" double, "tf_city_r" double)')
         con.executemany("insert into cv values (?,?,?)", _rows())
-        return [r[0] for r in con.execute(f"select {expression} from cv").fetchall()]  # noqa: S608
+        return [r[0] for r in con.execute(f"select {expression} from cv").fetchall()]
     finally:
         con.close()
 

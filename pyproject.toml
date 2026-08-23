@@ -119,7 +119,10 @@ ignore = [
 # its function name is exactly the decayed-comment problem 3.37 describes,
 # multiplied by every test. Tests whose reason is not obvious from the name DO
 # carry one; see the section 6.1 blind-spot tests.
-"tests_python/**" = ["S101", "PLR2004", "INP001", "D103", "FBT001"]
+# S608: these tests build SQL from MODULE CONSTANTS to compare our generated
+# SQL against Splink's, which is the whole point of a parity test. There is no
+# user input anywhere in this tree.
+"tests_python/**" = ["S101", "PLR2004", "INP001", "D103", "FBT001", "S608"]
 "harness/**" = ["S101", "PLR2004", "INP001", "D103"]
 # PLR0913 on the comparators specifically. Their parameters ARE A.4's tolerance
 # table -- key columns, the weight and probability column names, the threshold

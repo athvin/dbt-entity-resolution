@@ -293,6 +293,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 
 | | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.75 | The model JSON passes the §1.5 trust boundary before anything builds | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact | P + CI | Non-zero exit naming the level and the function |
+| 3.82 | Term frequencies sum to exactly 1.0 per column (§3.5's non-null denominator) | `tests_python/test_term_frequency_sql.py`, executed against the real fixture | CI | Test fails naming the column and the shortfall |
 | 3.81 | The JSON-derived column lists, the rendered SQL and the unit-test fixtures agree (RC57, M2, D12) | `tests_python/test_column_drift_guard.py` -- three artefacts checked against one model JSON, including against Splink's own product order | CI | Test fails naming the drifted artefact |
 | 3.80 | The gamma CASE and TF adjustment are bit-identical to Splink's | `tests_python/test_gamma_and_tf_sql.py` executes both against Splink's captured SQL over 1,507 rows covering every NULL combination | CI | Test fails naming the divergent row |
 | 3.79 | Scoring arithmetic is bit-identical to Splink's, executed rather than compared as text | `tests_python/test_match_weight_sql.py` runs both forms over 2,005 rows including the clamp boundaries and an infinity | CI | Test fails naming the first divergent row |
@@ -3634,6 +3635,16 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     and dbt raises that inside the materialization (`adapters.sql:157-160`), long after review. The
     generated list is checked against **Splink's own predict projection order**, so it is a parity
     assertion rather than a restatement of my own derivation.
+
+66. **§3.5's term-frequency denominator is confirmed, and the wrong version is silent by construction.**
+    Splink divides by `count(<col>)` -- the **non-null** count -- and excludes NULLs from the numerator
+    with a `WHERE` clause, so both sides cover the same population and the frequencies are a genuine
+    distribution summing to `1.0`. Using `count(*)` is the natural mistake: every frequency comes out
+    **proportionally** too small, so the ordering is unchanged and the values look entirely reasonable
+    while the adjustment is systematically wrong. The test suite now **documents the size of the error**
+    rather than merely forbidding it — on `fake_1000`, whose columns carry 17-21% NULLs, `sum(tf)` lands
+    between 0.75 and 0.85 instead of 1.0. §3.5's own one-line test catches it directly, and it is far
+    cheaper than comparing frequencies value by value.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both

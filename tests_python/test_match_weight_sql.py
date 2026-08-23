@@ -87,8 +87,8 @@ def scored() -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     try:
         con.execute("create table cv (bf_a double, bf_tf_adj_a double, bf_b double, bf_c double)")
         con.executemany("insert into cv values (?,?,?,?)", _rows())
-        ours = con.execute(f"select {_render()} from cv").fetchall()  # noqa: S608
-        theirs = con.execute(f"select {_splink_form()} from cv").fetchall()  # noqa: S608
+        ours = con.execute(f"select {_render()} from cv").fetchall()
+        theirs = con.execute(f"select {_splink_form()} from cv").fetchall()
     finally:
         con.close()
 
@@ -192,7 +192,7 @@ def test_an_underflowing_product_lands_on_section_3_1s_clamp_floor() -> None:
         con.execute("create table cv (bf_a double, bf_tf_adj_a double, bf_b double, bf_c double)")
         # 0.001 * (1e-80)^4 = 1e-323, well below the 1e-300 clamp.
         con.execute("insert into cv values (1e-80, 1e-80, 1e-80, 1e-80)")
-        weight = con.execute(f"select {_render(prior='0.001')} from cv").fetchone()  # noqa: S608
+        weight = con.execute(f"select {_render(prior='0.001')} from cv").fetchone()
     finally:
         con.close()
     assert weight is not None
@@ -209,7 +209,7 @@ def test_an_overflowing_product_lands_on_the_symmetric_ceiling() -> None:
     try:
         con.execute("create table cv (bf_a double, bf_tf_adj_a double, bf_b double, bf_c double)")
         con.execute("insert into cv values (1e80, 1e80, 1e80, 1e80)")
-        weight = con.execute(f"select {_render(prior='0.001')} from cv").fetchone()  # noqa: S608
+        weight = con.execute(f"select {_render(prior='0.001')} from cv").fetchone()
     finally:
         con.close()
     assert weight is not None
