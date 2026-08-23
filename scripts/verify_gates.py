@@ -346,6 +346,20 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.82",
+        what="divide term frequency by count(*) instead of the non-null count",
+        mutate="noop",
+        command=("pytest", "tests_python/test_term_frequency_sql.py", "-q", "--no-header"),
+        expect="assert",
+        edits=(
+            (
+                "macros/sql_gen/er_term_frequency_sql.sql",
+                'select count("{{ column_name }}") as total from {{ relation }}',
+                "select count(*) as total from {{ relation }}",
+            ),
+        ),
+    ),
+    Injection(
         standard="3.81",
         what="declare bf_tf_adj_ for a comparison that has no TF adjustment",
         mutate="noop",

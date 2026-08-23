@@ -1,0 +1,39 @@
+---
+version: 2
+
+macros:
+  - name: er_term_frequency_sql
+    description: >
+      Section 3.5 / D7's term frequency. The denominator is `count(<col>)` --
+      the NON-NULL count -- never `count(*)`, matching Splink's own generator at
+      `term_frequencies.py:33-48`.
+
+
+      SQL's `count(<col>)` skips NULLs and the WHERE clause skips them in the
+      numerator too, so both sides of the division cover the same population and
+      the frequencies sum to exactly 1.0.
+
+
+      Using `count(*)` is the natural mistake and it is SILENT: every frequency
+      comes out proportionally too small, the ordering is unchanged, the values
+      look reasonable, and the term-frequency adjustment is systematically
+      wrong. On fake_1000, whose columns carry 17-21% NULLs, `sum(tf)` lands
+      near 0.8 instead of 1.0 -- which is exactly section 3.5's own test
+      (3.82).
+
+
+      D7a's freezing is the stage's other half and lives in the model rather
+      than here: `tf_all` is keyed
+      `(er_model_sha, er_tf_snapshot_id, column_name, value, tf)` and is READ
+      from a frozen snapshot on every parity and production run. This macro is
+      the `er_tf_mode='refresh'` path used only when minting one.
+
+    arguments:
+      - name: column_name
+        type: string
+        description: >
+          The column to compute frequencies for. Empty raises `ER-054`: a term
+          frequency table with no subject is section 6.1's empty-set pass.
+      - name: relation
+        type: string
+        description: The corpus relation, normally `stg_input`.
