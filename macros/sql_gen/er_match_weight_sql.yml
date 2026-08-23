@@ -1,0 +1,44 @@
+---
+version: 2
+
+macros:
+  - name: er_match_weight_sql
+    description: >
+      Section 3.1 / D6 / DR-06. Multiplies bayes factors in LINEAR SPACE,
+      clamps to [1e-300, 1e300], and applies `log2` exactly once. The prior is
+      converted to odds and multiplied as the first factor, never log2'd and
+      added.
+
+
+      v1 specified "sum of per-comparison log2 Bayes factors", which Splink does
+      not do. Section 3.1 measured the naive log-space sum diverging by 9.97 on
+      underflow and 56.47 on overflow, in match-weight units, against A.4's 1e-9
+      tolerance. G5 measured the same effect at the other end: `product(bf)` and
+      `exp(sum(ln(bf)))` differ by 3 ULP on a seven-factor product with no
+      clamping in play.
+
+
+      The single-evaluation construct is a LATERAL COLUMN ALIAS (B.8 / DR-23).
+      Splink's own projection repeats the clamped product three times -- once in
+      the numerator and twice in `(p)/(1+(p))`. D11 rec 4 requires computing it
+      once; Stage 0.8 measured the alias evaluating once per row on DuckDB
+      1.5.5, so no subquery is emitted and `forbid_subquery_in` keeps its
+      configured scope.
+
+
+      Verified bit-identical to Splink's form over 2,005 rows including both
+      clamp boundaries and an infinity (3.79).
+
+    arguments:
+      - name: prior_odds
+        type: string
+        description: >
+          `probability_two_random_records_match` converted to odds. Multiplied
+          as the first factor.
+      - name: bf_columns
+        type: list
+        description: >
+          Every `bf_<name>` and `bf_tf_adj_<name>` column, in order. An empty
+          list raises `ER-051`: the product would collapse to the prior alone
+          and score every pair identically, which looks like a working model
+          and is not one.

@@ -293,6 +293,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 
 | | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.75 | The model JSON passes the §1.5 trust boundary before anything builds | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact | P + CI | Non-zero exit naming the level and the function |
+| 3.79 | Scoring arithmetic is bit-identical to Splink's, executed rather than compared as text | `tests_python/test_match_weight_sql.py` runs both forms over 2,005 rows including the clamp boundaries and an infinity | CI | Test fails naming the first divergent row |
 | 3.78 | Generated SQL matches Splink's own, not a transcription of the prose | `tests_python/test_blocking_sql.py` renders the macro and compares against `fixtures/snapshots/*.sql`, captured from Splink's generator | CI | Test fails showing the first divergent token |
 | 3.77 | Stage-1 model-JSON lints: asymmetric levels reported (M1), `output_column_name` unique after `.replace(" ", "_")` (M2), a **present** `m`/`u` of 0 is a hard error while an **absent** one is valid input (M13) | `scripts/er_sidecar.py` -- the same pass that validates and resolves | P + CI | Non-zero exit naming the comparison and the level |
 | 3.76 | The A.2 sidecar regenerates byte-identically from its model JSON | `scripts/er_sidecar.py --check` compares the committed artefact against a fresh resolution; resolution is **Splink's own**, never a reimplementation | P + CI | Non-zero exit naming the drifted file |
@@ -3599,6 +3600,22 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     shape the snapshot changes and the macro is *shown* to have diverged. A snapshot written by hand from
     the document would only ever test that the macro matches what someone believed. It carries the same
     provenance manifest as a parquet baseline, and 3.62 now covers `.sql` for that reason.
+
+62. **Jinja's `{% set %}` inside a `{% for %}` does not accumulate, and the result was valid SQL that
+    scored every pair identically.** Building the bayes-factor product with an in-loop accumulator left
+    `least(greatest(cast(<prior> as float8), 1e-300), 1e300)` — **the prior alone, with every factor
+    silently dropped**. The SQL parses, runs, and returns plausible probabilities; it is the *"looks like
+    a working model and is not one"* failure my own `ER-051` message describes, arriving through the macro
+    rather than through its arguments. **Nothing in review would have caught it** — the divergence is
+    invisible without executing against the oracle. The fix is `join`, and the test that found it is
+    pinned. Second time this session that Jinja's scoping rules produced a silent no-op.
+
+63. **§3.1's clamp figures are `log2(1e-300)` and `log2(1e300)`, not incidental numbers.** ±996.5784284662087
+    is the floor and ceiling themselves. My first test transcribed §3.1's underflow figure and applied it
+    to four factors instead of twelve, which gave −340.84 — correct arithmetic for those inputs, and a
+    failing test for the wrong reason. **Asserting the property beats transcribing the number**: any
+    product below `1e-300` scores at the floor, which is precisely what a log-space sum fails to do as it
+    continues to −1006.54.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
