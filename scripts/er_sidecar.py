@@ -395,6 +395,10 @@ def build(raw: str, bounds: dict[str, int] | None = None) -> dict[str, Any]:
         # in a link job whose orientation is settled. What is not legitimate is
         # not knowing, so it travels with the artefact.
         "asymmetric_levels": _check_symmetry(validated["model"]),
+        # M2: published as vars so `schema.yml` can contract the two models
+        # whose column set is data. RC57's drift guard covers these against the
+        # rendered SQL and the unit-test fixtures -- three artefacts, one JSON.
+        **column_lists(resolve(validated["model"])),
     }
 
 
@@ -597,6 +601,38 @@ def resolve(model: dict[str, Any]) -> dict[str, Any]:
         # supplies it, and Open Question 3 governs refusing the configuration.
         "er_left_table": None,
     }
+
+
+def column_lists(resolved: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    """M2's `er_gamma_columns` and `er_bf_columns`, as dbt `columns:` entries.
+
+    **dbt parses `schema.yml` as YAML BEFORE rendering Jinja**, so a `{% for %}`
+    cannot emit YAML structure -- which silently removes contracts, per-column
+    tests, docs and unit-test fixtures from exactly the two models Stages 4 and
+    5 are about. `[SRC] dbt/parser/schemas.py:128-155`.
+
+    The mechanism that does work is **native** Jinja on a string leaf
+    (`renderer.py:43-48`): `columns: "{{ var('er_gamma_columns') }}"` renders to
+    a genuine list of dicts. And `SchemaYamlContext` adds only `var` and
+    `env_var` -- **no project macros** -- so the derivation must live where the
+    model JSON is emitted, which is here, not in a macro.
+
+    That constraint is why this is a Stage-1 decision: M2's failure scenario is
+    it being noticed mid-Stage-4, "a Stage-1 decision being made in Stage 4".
+    """
+    gamma: list[dict[str, str]] = []
+    bayes: list[dict[str, str]] = []
+    for comparison in resolved["comparisons"]:
+        name = str(comparison["output_column_name"]).replace(" ", "_")
+        # The gamma CASE emits integer comparison_vector_values.
+        gamma.append({"name": f"gamma_{name}", "data_type": "INTEGER"})
+        bayes.append({"name": f"bf_{name}", "data_type": "DOUBLE"})
+        # `bf_tf_adj_` exists only where a level carries a TF adjustment --
+        # emitting it unconditionally would contract a column the SQL never
+        # produces, and dbt raises on the mismatch at run time.
+        if any(level["tf_u_exact_match"] is not None for level in comparison["levels"]):
+            bayes.append({"name": f"bf_tf_adj_{name}", "data_type": "DOUBLE"})
+    return {"er_gamma_columns": gamma, "er_bf_columns": bayes}
 
 
 def _safely(call: Any) -> Any:
