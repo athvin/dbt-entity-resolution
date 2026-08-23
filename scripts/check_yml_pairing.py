@@ -22,13 +22,14 @@ rather than quietly.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from _er_paths import ROOT
+from _er_paths import rel as _rel
 
 # 3.1: "Covers BOTH project roots." The package and the runnable project.
 PROJECT_ROOTS = (ROOT, ROOT / "integration_tests")
@@ -48,14 +49,6 @@ def _walk(base: Path, suffix: str) -> Iterator[Path]:
         if SKIP_PARTS & set(path.parts):
             continue
         yield path
-
-
-def _rel(path: Path) -> str:
-    """Render ``path`` relative to the repository root, for an actionable message."""
-    try:
-        return str(path.relative_to(ROOT))
-    except ValueError:
-        return str(path)
 
 
 def _check_dir(base: Path, partner: str) -> list[str]:

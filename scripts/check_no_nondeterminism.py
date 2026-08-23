@@ -31,13 +31,15 @@ from __future__ import annotations
 
 import re
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from _er_paths import ROOT
+from _er_paths import rel as _rel
+
 PROJECT_ROOTS = (ROOT, ROOT / "integration_tests")
 SCAN_DIRS = ("models", "macros", "tests", "analyses")
 SKIP_PARTS = {"target", "dbt_packages", "logs", ".venv", "__pycache__"}
@@ -86,19 +88,6 @@ EXEMPT_RUN_CONTEXT: frozenset[str] = frozenset(
 )
 
 _COMMENT_RE = re.compile(r"\{#.*?#\}", re.DOTALL)
-
-
-def _rel(path: Path) -> str:
-    """Render ``path`` relative to the repository root, or absolute if outside it.
-
-    A scanned tree is not always inside ROOT -- the failing-case tests build one
-    in a temp directory, which is the point of 3.57. `relative_to` raises there,
-    so a message-formatting helper must not assume containment.
-    """
-    try:
-        return str(path.relative_to(ROOT))
-    except ValueError:
-        return str(path)
 
 
 def _strip_comments(text: str) -> str:

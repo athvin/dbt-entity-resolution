@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import check_flags_parity  # noqa: E402
 import check_no_nondeterminism  # noqa: E402
 import check_root_packages_minimal  # noqa: E402
+import check_workflow_hardening  # noqa: E402
 import check_yml_pairing  # noqa: E402
 
 
@@ -213,3 +214,68 @@ def test_root_packages_accepts_the_shipped_surface(
     shutil.copyfile(ROOT / "packages.yml", pkgs)
     monkeypatch.setattr(check_root_packages_minimal, "PACKAGES", pkgs)
     assert check_root_packages_minimal.check() == []
+
+
+# --------------------------------------------------------------------------
+# 3.56 -- workflow hardening
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def workflows(tmp_path: Path) -> Path:
+    """Build a workflow directory that satisfies every hardening rule."""
+    wf = tmp_path / "workflows"
+    wf.mkdir()
+    (wf / "ci.yml").write_text(
+        "---\n"
+        "on:\n  pull_request: {}\n"
+        "permissions:\n  contents: read\n"
+        "jobs:\n"
+        "  lint:\n"
+        "    permissions:\n      contents: read\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@" + ("a" * 40) + "\n"
+        "        with:\n          persist-credentials: false\n"
+    )
+    return wf
+
+
+def test_workflow_hardening_passes_on_a_clean_workflow(workflows: Path) -> None:
+    assert check_workflow_hardening.check(workflows) == []
+
+
+def test_workflow_hardening_rejects_a_mutable_tag(workflows: Path) -> None:
+    p = workflows / "ci.yml"
+    p.write_text(p.read_text().replace("a" * 40, "v5"))
+    errors = check_workflow_hardening.check(workflows)
+    assert any("40-character commit SHA" in e for e in errors)
+
+
+def test_workflow_hardening_rejects_persisted_credentials(workflows: Path) -> None:
+    p = workflows / "ci.yml"
+    p.write_text(p.read_text().replace("persist-credentials: false", "fetch-depth: 0"))
+    errors = check_workflow_hardening.check(workflows)
+    assert any("persist-credentials" in e for e in errors)
+
+
+def test_workflow_hardening_rejects_a_job_without_permissions(workflows: Path) -> None:
+    p = workflows / "ci.yml"
+    p.write_text(p.read_text().replace("    permissions:\n      contents: read\n", "", 1))
+    errors = check_workflow_hardening.check(workflows)
+    assert any("declares no `permissions:`" in e for e in errors)
+
+
+def test_workflow_hardening_rejects_pull_request_target(workflows: Path) -> None:
+    """Section 15's stated position is never. C.7's GITHUB_ENV heredoc is why."""
+    p = workflows / "ci.yml"
+    p.write_text(p.read_text().replace("  pull_request: {}", "  pull_request_target: {}"))
+    errors = check_workflow_hardening.check(workflows)
+    assert any("pull_request_target" in e for e in errors)
+
+
+def test_workflow_hardening_fails_when_there_are_no_workflows(tmp_path: Path) -> None:
+    """A check whose subject has disappeared must not report success."""
+    empty = tmp_path / "none"
+    empty.mkdir()
+    errors = check_workflow_hardening.check(empty)
+    assert any("nothing to check" in e for e in errors)

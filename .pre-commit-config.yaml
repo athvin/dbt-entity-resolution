@@ -86,6 +86,14 @@ repos:
         language: system
         pass_filenames: false
 
+      # 3.56. Not in C.6's delta table -- the workflow did not exist when that
+      # table was written, so there was nothing to harden.
+      - id: er-workflow-hardening
+        name: "workflows are SHA-pinned and least-privilege"
+        entry: python scripts/check_workflow_hardening.py
+        language: system
+        pass_filenames: false
+
       # C.6 delta 5: the enforcement scripts are covered by their own suite
       # (3.57). A script with no failing-case test has not been shown to fire.
       - id: er-python-tests
