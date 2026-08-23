@@ -143,6 +143,11 @@ jobs:
       # This is one of the three NEVER-RETRY gates (section 21), with parity and
       # determinism. A surviving mutant is a product defect until proven
       # otherwise -- re-running it only hides which mutant survived.
+      # 3.59 / G5. This runner is native linux/amd64 -- the normative float
+      # platform (section 22.1) -- and the same assertions run locally on
+      # darwin/arm64. Two platforms pinning one reference is what closed G5.
+      - name: "record the float platform (3.59)"
+        run: uv run python -c "import platform; print(platform.platform())"
       - run: uv run pytest harness -q
 
   build:

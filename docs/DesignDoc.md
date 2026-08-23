@@ -2711,7 +2711,7 @@ For the record, v1's crossover — the `|mw|` below which its `1e-8` probability
 | golden records | exact |
 | any float **aggregate** | **not a gate.** Non-deterministic above one thread (M15); advisory only. |
 
-Add the standing note: *exact bit equality is the right default because both engines run float8 on the same DuckDB; where the expression tree is identical the result is identical.* Tolerance is for where it provably cannot be — which, after §3.1's linear-space rule, is almost nowhere.
+Add the standing note: *exact bit equality is the right default because both engines run float8 on the same DuckDB; where the expression tree is identical the result is identical.* **Verified across platforms 2026-08-23 (G5, closed): all five probe values are bit-identical on darwin/arm64 and linux/amd64 under DuckDB 1.5.5, `log2` included, and `harness/test_float_parity.py` asserts it on both platforms every run.** Tolerance is for where it provably cannot be — which, after §3.1's linear-space rule, is almost nowhere.
 
 ---
 
@@ -3198,6 +3198,41 @@ anything the document told them not to.
 > and 4 remain this document's to write.
 
 ### G5 — "Exact bit equality" was measured on one platform, and committed baselines cross platforms in CI
+
+> **CLOSED 2026-08-23 `[RUN]`.** Measured on DuckDB 1.5.5 across **darwin/arm64** and **linux/amd64**:
+> all five probe values are **bit-identical**, including `log2` — the libm call this finding is about.
+>
+> | value | darwin/arm64 | linux/amd64 |
+> |---|---|---|
+> | `via_product` | `413498e8ffffffff` | `413498e8ffffffff` |
+> | `via_logs` | `413498e8fffffffc` | `413498e8fffffffc` |
+> | `clamped` | `413498e8ffffffff` | `413498e8ffffffff` |
+> | **`match_weight`** (`log2`) | `40345d48400a308f` | `40345d48400a308f` |
+> | `match_probability` | `3feffffe724742f5` | `3feffffe724742f5` |
+>
+> §B.5 item 4 said this *"either closes the finding permanently or changes the tolerance table"*. **It
+> closes it: A.4's exact-bit-equality default holds across platforms, and no tolerance is spent.**
+>
+> **It is not recorded as a measurement, because a measurement decays.** `harness/float_probe.py` commits
+> the reference and `harness/test_float_parity.py` asserts it — locally on darwin/arm64, and in CI on
+> `ubuntu-24.04`, which is native linux/amd64. **Two platforms assert the same bits on every run**, which
+> is a stronger claim than either measuring once, and a divergence fails at the probe rather than being
+> discovered as a baseline that stopped reproducing. Scoped to DuckDB 1.5.5 per §0; the version is
+> asserted, so a bump reopens the finding by failing.
+>
+> **Confirmed on native hardware, not only under emulation.** The first CI run of this gate reproduced the
+> reference on `Linux-6.17.0-1022-azure-x86_64-with-glibc2.39` — a native x86_64 GitHub runner — with all
+> 38 harness tests green. The reference therefore holds in **three** independent environments:
+>
+> | environment | how |
+> |---|---|
+> | darwin/arm64 | native, local |
+> | linux/amd64 | `docker --platform linux/amd64` on an arm64 host (emulated) |
+> | linux/amd64 | **native** GitHub `ubuntu-24.04`, glibc 2.39 |
+>
+> The emulated run is recorded because it is what made the answer available before the gate existed; it is
+> **not** what the claim rests on. The claim rests on the native runner asserting the same bits on every
+> build, which is why the gate rather than the measurement was the deliverable.
 
 **Severity:** BLOCKER · **Attacks:** §6.1, A.4, Stage 0.3, M18 · **Scope:** in-scope
 
