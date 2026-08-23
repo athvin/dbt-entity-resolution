@@ -881,12 +881,34 @@ rule whose only remedy is a construct the project bans is not a rule, and the re
 precisely because 7.3 forces everything stage-shaped out into models. This changes 3.15's determinism rule
 set, so it is registered as **Appendix B.8** rather than applied unilaterally.
 
-**One alternative to test first `[UNVERIFIED]`:** DuckDB supports **lateral column aliases** — referring to
-an earlier alias in the same `SELECT` list — which would satisfy D11 rec 4 with no subquery and no CTE, and
-would leave ST05 untouched. Before adopting it, verify the thing D11 actually asks for: whether DuckDB
-evaluates the aliased expression **once** or expands it textually and re-evaluates. If it expands, float
-parity is still safe (an identical expression tree yields an identical result) but D11's cost argument is
-not, and *"single-evaluation must be structural"* is unmet. Check `EXPLAIN ANALYZE` before relying on it.
+**Resolved 2026-08-23 in favour of the alternative, which was tested first `[RUN]` (DR-23, Stage 0.8).**
+DuckDB supports **lateral column aliases** — referring to an earlier alias in the same `SELECT` list — which
+satisfies D11 rec 4 with no subquery and no CTE, and leaves ST05 untouched. The spike measured the thing D11
+actually asks for, using a UDF that counts its own invocations rather than inferring from timings:
+
+| Construct | Evaluations over 1,000 rows |
+|---|---|
+| **(c) lateral column alias** | **1,000 — once per row** |
+| (a) FROM-clause subquery | 1,000 |
+| the expression repeated three times | 1,000 |
+
+All three are **bit-identical**. So (c) evaluates once, D11 rec 4 is satisfied structurally, and
+**`forbid_subquery_in` keeps its configured scope — 3.15's determinism rule set is not changed.** The
+recommendation was *"(a), after testing (c)"*; (c) tested successfully, so (a) is not adopted.
+
+**And the third row is the one worth reading twice.** This section says *"repeating the expression is not an
+option"* on a cost argument — and on DuckDB 1.5.5 that argument is **unfounded**: three identical calls cost
+one evaluation per row, because the planner splits the projection and computes the common subexpression
+once. `EXPLAIN` shows the inner projection doing exactly that. (c) remains the choice, because it states the
+intent in the SQL rather than relying on an optimiser pass that a version bump could withdraw — but a
+premise that turned out to be false is recorded as false, rather than left standing because the conclusion
+it supported survived anyway.
+
+**Both facts are engine behaviour, not guarantees, so they are scoped to the pin** exactly as §0 scopes a
+`[VERIFIED]` marker. `harness/test_duckdb_expression_semantics.py` asserts the DuckDB version, both
+evaluation counts, and bit-identity — and includes a guard proving the counter can tell two evaluations from
+one, so the whole file cannot pass vacuously. A DuckDB bump that folds differently fails there, loudly,
+instead of quietly reintroducing the cost D11 rejected on the project's hottest relation.
 
 #### 7.3.3 Cost, honestly
 
@@ -1202,7 +1224,8 @@ should be written before the second comparison type lands rather than after.
 > to Appendix C first would be a second move for no gain — Appendix C is itself scheduled to reduce to
 > pointers under the same rule. What stays here permanently is the rule-by-rule reasoning that is genuinely
 > design content: the blocked-words list against D9's `USING SAMPLE` carve-out, the casting-style choice,
-> and the ST05 / §7.3 / D11 collision whose premise B.8 has yet to settle.
+> and the ST05 / §7.3 / D11 collision — whose premise B.8 settled on 2026-08-23, in favour of leaving the
+> rule alone.
 
 **Canonical: [`.sqlfluff`](../.sqlfluff).** Per §23 the repository file is canonical; what stays here is
 the rule-by-rule reasoning, which is design content rather than configuration.
@@ -1213,8 +1236,10 @@ on — Jinja blocks are indented with the SQL they generate, which is what makes
 readable. `CP01`/`CP02` force lowercase keywords and identifiers; `AM04` requires an explicit column list,
 because `select *` in a model is a contract that changes without a commit. **`ST05` is the collision**: it
 bans subqueries in favour of CTEs, §7.3 bans CTEs inside `WITH RECURSIVE`, and D11 makes every stage a
-table — so a rule that is right everywhere else is wrong on the flagship models. Its scope is B.8's open
-question, and the spike is Stage 0.8.
+table — so a rule that is right everywhere else is wrong on the flagship models. **B.8 closed this on
+2026-08-23 without touching the rule**: Stage 0.8's spike measured a lateral column alias evaluating **once
+per row** on DuckDB 1.5.5, which satisfies D11 rec 4 with no subquery at all, so `ST05` keeps its
+configured scope. See §7.3.2 and DR-23.
 
 The **blocked-words list** carries one deliberate carve-out: `USING SAMPLE` is blocked as
 non-deterministic, but D9 needs it, so the carve-out is named in the file rather than left to a reviewer.
@@ -3311,6 +3336,22 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     reproduced on demand; dropping NULL keys before diffing left `inject_null_key` surviving; and a wrong
     join key failed **13 of 24 tests**, which is §12.7's opening scenario made loud instead of green. The
     mutants are not a checklist — each one maps to a specific way the comparator can be wrong.
+
+35. **Stage 0.8's spike changed the answer, which is the whole reason it was mandated.** B.8's
+    recommendation was *"(a), after testing (c)"* — relax `ST05`, having first checked whether DuckDB's
+    lateral column alias evaluates once. `[RUN]` on DuckDB 1.5.5, counted with a UDF rather than inferred
+    from timings: **(c) evaluates once per row**, so option (a) is not adopted and 3.15's determinism rule
+    set is untouched. Had the spike been skipped, RC46's warning would have landed exactly as written — a
+    lint rule relaxed by default, permanently, to solve a problem that did not exist.
+
+36. **B.8's cost argument against repeating the expression is unfounded on DuckDB 1.5.5.** The same spike
+    measured the thrice-repeated form at **one evaluation per row**, not three: the planner splits the
+    projection and computes the common subexpression once, visible in `EXPLAIN`. This does not change the
+    resolution — the lateral alias states the intent in the SQL rather than depending on an optimiser pass
+    — but the premise is recorded as false rather than left standing because the conclusion it supported
+    happened to survive. Both facts are engine behaviour scoped to the pin, and
+    `harness/test_duckdb_expression_semantics.py` fails on a DuckDB bump that folds differently, including
+    a guard proving its own counter can tell two evaluations from one.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
