@@ -6,6 +6,8 @@
 # two records sharing a unique_id. `fake_1000` exercises none of them, and each
 # is a shape where a pipeline can report success while computing nothing.
 kind: synthetic
+# 3.55 / section 20.4. Hand-authored from invented values; no real person data.
+synthetic: true
 path: all_null_blocking_column.csv
 authored: 2026-08-23
 generator: hand-authored

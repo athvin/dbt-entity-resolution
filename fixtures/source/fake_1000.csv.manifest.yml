@@ -9,6 +9,10 @@
 # Section 5's word is "vendor", and this is why: the parity oracle's input must
 # be a committed byte sequence with a recorded hash, not a URL.
 kind: vendored
+# 3.55 / section 20.4: fixtures are synthetic ONLY, and it is stated rather than
+# inferred. MoJ publish this as fake data; the surname-derived email domains
+# (humphrey.com, smith.net) are generated, not collected.
+synthetic: true
 path: fake_1000.csv
 sha256: 66f9b8f92b9b082ef982fe18c77030fbed8780f06ce1d40d7106be5a72392e2a
 bytes: 55983

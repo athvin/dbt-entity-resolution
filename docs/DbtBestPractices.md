@@ -272,7 +272,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | 3.52 | The package creates no relations a consumer did not ask for | CI asserts the package's `data_tests:` block sets no `store_failures_as`, and that the package declares **no `on-run-end` hooks** — `on-run-start: er_assert_project_standards` is required by §2 and is explicitly permitted | CI | Job fails |
 | 3.53 | Column budget: no `_l`/`_r` passthrough unless the debug var is set | Policy macro checks declared columns on the two pair-grain models against `er_retain_matching_columns` | C | `raise_compiler_error` |
 | 3.54 | No build artefact is ever committed | `.gitignore` + a pre-commit hook rejecting staged `target/`, `dbt_packages/`, `*.duckdb` — `.gitignore` alone loses to `git add -f` | P | Hook fails |
-| 3.55 | Fixtures and seeds are synthetic; no secrets, no real person data | `detect-private-key` + a PII heuristic scan over `seeds/`, `fixtures/`, `harness/` | P + CI | Non-zero exit |
+| 3.55 | Fixtures and seeds are synthetic; no secrets, no real person data | `detect-private-key` + `scripts/check_pii_heuristics.py` over `seeds/`, `fixtures/`, `harness/`: every data file must declare `synthetic: true` in its manifest, and structured identifiers (Luhn-valid PANs, NI numbers, SSNs, IBANs) and consumer email providers are rejected | P + CI | Non-zero exit naming the file and the indicator |
 | 3.56 | CI actions are SHA-pinned, least-privilege, and do not persist credentials | `scripts/check_workflow_hardening.py`: asserts every `uses:` carries a 40-char SHA, every job declares `permissions:`, every checkout sets `persist-credentials: false`, and **no workflow uses `pull_request_target`** — §15 states that position and C.7's `GITHUB_ENV` heredoc is why | P + CI | Non-zero exit naming the workflow and job |
 | 3.57 | The enforcement scripts are themselves tested, positively and negatively | pytest over `scripts/` and `dbt_bouncer_checks/` with a coverage floor; every script ships a failing-case test | P + CI | Non-zero exit |
 | 3.58 | Environment determinism is pinned, not assumed | `PYTHONHASHSEED=0`, `TZ=UTC`, `LC_ALL=C` set in `Makefile` and workflow env, and asserted in the determinism job | CI | Job fails |
@@ -3372,6 +3372,27 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     *what it probes*. Requiring §20.1's fields of a vendored CSV would have been noise, and requiring none
     of them would have been vacuous — so the manifest declares its kind and the check dispatches on it. An
     unknown kind is an error, not a default.
+
+39. **3.55 was half-enforced, and 3.39 could not see the missing half.** The row names two mechanisms —
+    `detect-private-key` **and** a PII heuristic scan. The first was wired from the start; **the second did
+    not exist**. 3.39 passed the row anyway, because `_as_hook` was reached only for `er-` prefixed tokens,
+    so every *upstream* hook id the matrix cites read as prose and resolved by default — and the scan
+    itself was named in prose, with no citation at all. Two fixes: the row now names
+    `scripts/check_pii_heuristics.py` by path, and 3.39 resolves any hook-shaped token against the
+    configured set, with a written, capped `_NOT_HOOK_IDS` list for dashed tokens that are not hook ids.
+    Widening it surfaced two more rows worth checking properly rather than excusing: **3.4 and 3.18 cite
+    yamllint rules** (`empty-values`, `key-duplicates`), so 3.39 now verifies those are *enabled* in
+    `.yamllint.yml` rather than merely mentioned — §10.4 calls `empty-values` *"the gate contracts cannot
+    provide"*, and nothing had been checking it was on.
+
+40. **The PII control that works is a declaration, not a heuristic.** Every data file under `seeds/` and
+    `fixtures/` must carry a manifest asserting `synthetic: true`. A regex cannot prove data is synthetic;
+    a person can, and the check then holds them to it. The heuristics catch only what a declaration cannot
+    — structured identifiers (Luhn-valid PANs, NI numbers, SSNs, IBANs), which should never appear even in
+    synthetic data because a well-formed identifier is indistinguishable from a real one, and **consumer
+    email providers as a blocklist rather than a domain allowlist**: `fake_1000` uses surname-derived
+    domains like `humphrey.com`, which an allowlist would reject wholesale, while real person data
+    overwhelmingly carries `gmail.com` and its peers.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both

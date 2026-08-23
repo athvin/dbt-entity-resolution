@@ -107,6 +107,12 @@ repos:
         language: system
         pass_filenames: false
 
+      - id: er-pii-heuristics
+        name: "fixtures and seeds are synthetic, and declare it"
+        entry: python scripts/check_pii_heuristics.py
+        language: system
+        pass_filenames: false
+
       - id: er-canonical-homes
         name: "no document holds a second copy of a live config file"
         entry: python scripts/check_canonical_homes.py
