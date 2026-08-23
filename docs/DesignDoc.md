@@ -115,7 +115,66 @@ real trained model with **no splink import** and executed correctly in DuckDB 1.
 3. **Determinism is a feature.** Total ordering everywhere. Two runs on the same input produce identical
    content (see §6.3 for the correct form of this claim — "byte-identical" is the wrong assertion).
 4. **The model JSON is the contract — but it is not self-describing.** Five things must be recomputed
-   from it rather than read out of it. See D1.
+   from it rather than read out of it. See D1. **And it is a contract only after it has been validated**
+   — until then it is untrusted input. See §1.5.
+
+### 1.5 The model JSON is a trust boundary
+
+**Normative. Supersedes:** principle 4's unqualified *"the model JSON is the contract"*, and D6's framing
+of its function list as a *"lint whitelist"*. **Closes G3. Register row: DR-17.**
+
+The model JSON is an **input, not a contract, until it has been validated.** Principle 4 states what it
+*means* once trusted; this section states what makes it trusted.
+
+The reason is D6. Comparison-level SQL is passed through **verbatim** into compiled SQL, and D1 delivers
+the JSON through an environment variable — so it never passes review as code. In a consumer's project
+`DBT_ER_MODEL_JSON` may be set from a pipeline variable rather than a reviewed file, at which point this
+package executes arbitrary SQL with that consumer's warehouse credentials. That is the hostile reading.
+The benign one is likelier and nearly as damaging: an analyst adds an age-band level containing
+`current_date` — the natural way to write one — gamma becomes a function of the wall clock, and every
+parity and determinism gate in §6 silently stops being true while CI merely looks flaky.
+
+**Validation happens once, at compile time, in the sidecar** (§A.2), because the sidecar already parses
+every `sql_condition` with sqlglot and therefore already holds the tree. Validating the raw string instead
+of the parsed tree is what makes an allow-list bypassable, and it is the same mistake §A.2 C2 records for
+TF exact-match resolution: *"Jinja can only string-match."*
+
+Five rules. All enforced at compile time, all failing the build rather than warning:
+
+1. **Every function in a parsed `sql_condition` appears in D6's allow-list**, which is normative and
+   closed. An unlisted function fails compilation **naming the function**, not "invalid condition".
+2. **Non-deterministic functions are rejected outright**, listed or not: `current_date`,
+   `current_timestamp`, `now()`, `random()`, `nextval`, `uuid()`, and anything else reading session or
+   wall-clock state. This is the rule that keeps §6.3's determinism claim true rather than aspirational.
+3. **Structural rejection.** No subquery, no statement terminator, no set operation, no CTE, no
+   `INTO` / `COPY` / `ATTACH` / `INSTALL` / `LOAD`, no side-effecting call. A `sql_condition` is a scalar
+   boolean expression over columns of the current row pair; anything else is not a comparison level,
+   however it is spelled.
+4. **The input is bounded** — `er_max_comparisons`, `er_max_levels_per_comparison`,
+   `er_max_model_json_bytes`. Exceeding one is a named error rather than a pathological build. M2 measures
+   397 B/level, so generous defaults are cheap; the point is that "the JSON is enormous" becomes a
+   diagnosis instead of a symptom.
+5. **`er_model_sha` is the hash of the validated artifact**, never of whatever arrived in the environment.
+   `dbt build` refuses a model JSON whose sidecar output is absent or whose hash does not match. This is
+   what makes rules 1–4 unskippable: an unvalidated JSON has no sha, and a model with no sha does not
+   build.
+
+**What this costs, stated rather than discovered.** A model JSON that **Splink itself produced can fail
+this validation.** Splink has no such allow-list, and a user-supplied `CustomLevel` may legitimately
+contain a function D6 never enumerated. That is a **supported-configuration boundary** — narrower than
+Stage 12.1's, and in the same class — not a bug. When it bites, the fix is a reviewed addition to D6's
+list with the determinism argument written down, never a bypass flag. A bypass flag would return the
+package to executing unreviewed SQL with the consumer's credentials, which is the whole of what this
+section prevents.
+
+**Negative tests are part of the deliverable, not a follow-up.** A level containing `current_date` fails
+compilation; a level containing a subquery fails compilation; a level calling an unlisted function fails
+compilation naming the function; a model JSON exceeding a bound fails compilation naming the bound; and
+`dbt build` refuses a JSON whose sidecar hash does not match.
+
+> **Decided under delegated authority 2026-08-23.**
+> **Recommendation source:** G3 recommendations 1–5, adopted in full.
+> **Reversible:** reopen DR-17 in §B.3.
 
 ---
 
@@ -804,17 +863,20 @@ Two need care in the macro:
 - `PercentageDifferenceLevel` and `DistanceInKMLevel` contain a **nested CASE** that must be spliced into
   the outer gamma CASE without breaking `WHEN`/`THEN` parsing.
 
-Lint whitelist for D6's validation step: `levenshtein, damerau_levenshtein, jaro_similarity,
-jaro_winkler_similarity, jaccard, array_cosine_similarity, list_intersect, array_intersect, array_length,
-list_max, list_min, list_transform, flatten, try_strptime, epoch, radians, acos, sin, cos, least,
-greatest, regexp_extract, nullif, substring, lower, date_trunc, split_part`.
+**The allow-list, normative and closed** (§1.5 rule 1, DR-17): `levenshtein, damerau_levenshtein,
+jaro_similarity, jaro_winkler_similarity, jaccard, array_cosine_similarity, list_intersect,
+array_intersect, array_length, list_max, list_min, list_transform, flatten, try_strptime, epoch, radians,
+acos, sin, cos, least, greatest, regexp_extract, nullif, substring, lower, date_trunc, split_part`.
 
-**This list is normative and is an allow-list, not a lint suggestion — see G3.** Verbatim passthrough
-makes the model JSON arbitrary SQL executed with the consumer's warehouse credentials. G3 specifies the
-enforcement: validate the **parsed** condition (the A.2 sidecar already holds the tree), reject anything
-outside this list, and reject non-deterministic functions (`current_date`, `now()`, `random()`) outright —
-one of those inside a level makes gamma a function of the wall clock and silently voids every parity and
-determinism gate in §6.
+**This is an allow-list, not a lint suggestion.** v1 introduced it as a *"lint whitelist"*, which said
+nothing about where it is enforced, what it is matched against, or what a violation does — and G3 records
+that gap as the finding. **§1.5 answers all three**: enforcement is at compile time in the A.2 sidecar,
+matching is against the **parsed tree** rather than the raw string, and a violation fails the build naming
+the offending function. Non-deterministic functions are rejected whether or not they appear above.
+
+Adding to this list is a reviewed act with the determinism argument written down. It is not a
+configuration knob, because verbatim passthrough is what makes the model JSON arbitrary SQL executed with
+the consumer's warehouse credentials.
 
 ### D7 — One long-format TF model, not one model per column
 
@@ -1271,11 +1333,14 @@ lists must emit the fixtures too, and the drift guard covers three artefacts aga
 than two. Left to Stage 4 it becomes exactly the failure M2 describes, *"a Stage-1 decision being made in
 Stage 4"*, only now it blocks a gate (`DbtBestPractices.md` 3.20) rather than a contract.
 
-**Blocked by:** **DR-17** (the model JSON is untrusted SQL executed with the consumer's credentials — G3;
-this stage is where the trust boundary is enforced, and the sidecar is its natural enforcement point);
-**DR-16** (the input contract — G2, G9); and **`DbtBestPractices.md` B.8**, because the snapshot AC above
-reviews rendered scoring SQL containing D11 rec 4's subquery, which §11.1's `forbid_subquery_in = both`
-forbids (RC46).
+**The sidecar enforces §1.5's trust boundary** (DR-17, CURRENT). Its five rules — the closed allow-list
+against the parsed tree, the non-determinism rejection, the structural rejection, the input bounds, and
+`er_model_sha` as the hash of the *validated* artifact — are Stage 1 acceptance criteria, with the five
+negative tests §1.5 names. A build whose JSON has not passed the sidecar has no sha and does not run.
+
+**Blocked by:** **DR-16** (the input contract — G2, G9); and **`DbtBestPractices.md` B.8**, because the
+snapshot AC above reviews rendered scoring SQL containing D11 rec 4's subquery, which §11.1's
+`forbid_subquery_in = both` forbids (RC46).
 
 ### Stage 2 — Staging & term frequency
 
@@ -2267,6 +2332,8 @@ Six items, with the honest scope statement they imply. Everything **not** on thi
 
 **Sidecar (the fix for C2, C3, C4 that keeps runtime Python-free).** Amend principle 4 to: *"The model JSON plus a small, explicitly-versioned compile-time sidecar is the contract."* The sidecar is a generated, committed, hashed artefact produced by a Python preprocessing step that imports Splink and emits, per level: the resolved `comparison_vector_value`, the resolved `m`/`u` after Splink's own defaulting, the resolved `tf_u_exact_match` (or null), plus `er_backend_link_type`, `er_has_source_dataset` and `er_left_table`. Guard it with a byte-equality regeneration test — the same generated-file-with-parity-test pattern the incumbent already uses for `models/sources.yml`. This keeps `dbt build` free of Splink at **runtime** (DoD 2 as corrected in M17) while making the two algorithms Jinja cannot express *exact* rather than approximated. The gamma counter and `_default_m_values` are portable arithmetic and stay in Jinja.
 
+**The sidecar is also the enforcement point for §1.5, and that is not optional (DR-17).** This paragraph originally described the sidecar as a convenience that resolves what Jinja cannot compute — which is why G3 could observe that *"the document never says a JSON must pass through it, only that its outputs are used."* It says so now: **a model JSON that has not passed the sidecar has no `er_model_sha`, and a build with no `er_model_sha` fails.** The sidecar already parses every `sql_condition` with sqlglot for C2, so validating against the parse tree costs one pass it is already making — the allow-list check, the non-determinism rejection, the structural rejection and the size bounds all ride on the tree it already holds.
+
 **Honest scope statement for `PARITY.md`:**
 
 > For a model trained in Splink 4.0.16 with `link_type = dedupe_only`, plain equi-join blocking rules (no `arrays_to_explode`), and every comparison level carrying `m, u ∈ (0,1)`, `dbt-er` produces **byte-identical** candidate pairs and `match_key` (as VARCHAR), **identical** gamma vectors, **identical** connected-component labels, **identical** edge-set membership at every tested threshold, and match weights within `1e-9 + 1e-12·|mw|`.
@@ -2684,7 +2751,13 @@ for it.
 
 ---
 
-### G3 — The model JSON is untrusted SQL executed with the consumer's credentials, and there is no trust boundary
+### G3 — The model JSON is untrusted SQL executed with the consumer's credentials, and there is no trust boundary · **CLOSED 2026-08-23**
+
+> **Closed by §1.5**, which adopts all five recommendations below. **DR-17 is CURRENT.** The trust boundary
+> is declared, D6's list is a closed allow-list validated against the parsed tree, the input is bounded,
+> `er_model_sha` is the hash of the validated artifact, and the five negative tests are Stage 1 acceptance
+> criteria. §A.2's sidecar paragraph — which G3 correctly noted *"never says a JSON must pass through it"* —
+> now says it.
 
 **Severity:** BLOCKER · **Attacks:** D6, D1, §6.3, principle 4 · **Scope:** in-scope
 
@@ -3409,7 +3482,7 @@ force), **SUPERSEDED** (with the pointer), **OPEN** (needs an answer), **CONFLIC
 | DR-14 | Product posture | **CURRENT (2026-08-20)** | **Engine the platform calls** | §A.6 Q1, resolved and marked |
 | DR-15 | Supported configuration for v1 | CURRENT, not propagated | `dedupe_only`, VARCHAR id, no sds, equi-join only | Stage 12.1; **G18** |
 | DR-16 | Input contract | **MISSING** | — | **G2**, **G9** |
-| DR-17 | Model JSON trust boundary | **MISSING** | — | **G3** |
+| DR-17 | Model JSON trust boundary | **CURRENT (2026-08-23)** | **Untrusted input, validated once at compile time in the sidecar (§1.5).** D6's list is a closed allow-list checked against the *parsed* tree; non-deterministic functions, subqueries and statement terminators rejected; input bounded; `er_model_sha` is the hash of the **validated** artifact and `dbt build` refuses a JSON without one | Closes **G3**. Supersedes principle 4's unqualified "the model JSON is the contract" and D6's "lint whitelist" framing. Accepted cost: a Splink-produced JSON can fail validation — a supported-configuration boundary, not a bug. **Delegated authority** — see §1.5 |
 | DR-18 | Data classification & retention | **MISSING** | — | **G4** |
 | DR-19 | Parity claim's validity domain | **MISSING** | — | **G5** |
 | DR-20 | Package versioning & compatibility | **MISSING** | — | **G12**, depends on **G6** |
