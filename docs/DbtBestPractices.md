@@ -3704,7 +3704,21 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     is a stated fact rather than an invisible filter), and making retraining opt-in behind `--refreeze`.
     **A.4 gained the row it never had** — trained model parameters, relative `1e-12` — because byte
     equality is not achievable for a trained model and a table with no row for the artefact is what let
-    the silent re-freeze look normal. Guarded by **3.84**. The re-sorted baselines were verified
+    the silent re-freeze look normal. Guarded by **3.84**.
+
+72. **G5's closure was true of the probes and was read as a guarantee about the pipeline.** §A.4 records
+    G5 closed — *"all five probe values are bit-identical on darwin/arm64 and linux/amd64"* — and that
+    sentence is correct. It does not carry to the artefacts those expressions compose, and 3.84 failed in
+    CI on its first run for exactly that reason: the baselines were minted on darwin/arm64 and CI
+    regenerates on linux/amd64. Measured properly (Docker, identical `splink`, `duckdb`, `sqlglot`,
+    `pandas`, model sha, fixture sha, `mint_threads=1`): **bytes differ on all six artefacts**, data is
+    identical on five, `predictions` differs on **one pair of 3,989**, `max|Δmw| = 1.78e-15`,
+    `max|Δp| = 0`, **zero edge flips**. The divergence is real, ~2e-15, far inside A.4's
+    `1e-9 + 1e-12·|mw|`, and A.4's *binding* gate is exact. Baselines are now minted and committed as
+    **linux/amd64** (§22.1, 3.59), 3.84 is binding there and advisory elsewhere **and says which**, and
+    `verify_gates.py` reports a platform-bound injection as **SKIP** rather than counting it as shown to
+    fire — §0's distinction between *observed to pass* and *observed to fail when violated*, applied to
+    the verifier itself. The re-sorted baselines were verified
     content-identical to the committed ones: 3,989 pairs joined, `max|Δmw| = 0`, zero edge flips.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned

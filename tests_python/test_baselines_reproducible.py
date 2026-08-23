@@ -32,6 +32,17 @@ import check_baselines_reproducible as gate  # noqa: E402
 
 BASELINES = "fixtures/baselines/fake_1000"
 
+# §22.1 / 3.59: the baselines are committed as minted on linux/amd64, and G5
+# measured that byte identity does not survive a platform change (max |delta mw|
+# = 1.78e-15, zero edge flips). Tests that depend on regeneration reproducing the
+# COMMITTED bytes can therefore only run there. Skipped with a reason rather than
+# weakened to pass everywhere -- a test that holds on every platform because it
+# stopped asserting anything is the defect this suite exists to catch.
+normative_only = pytest.mark.skipif(
+    not gate.on_normative_platform(),
+    reason="byte identity is a linux/amd64 property (§22.1, 3.59, G5); CI is the authority",
+)
+
 
 @pytest.fixture(scope="module")
 def tree(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
@@ -52,11 +63,13 @@ def _fresh(tree: pathlib.Path, tmp_path: pathlib.Path) -> pathlib.Path:
     return root
 
 
+@normative_only
 def test_the_committed_baselines_regenerate(tree: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """The baseline claim. Without this, every failing case below proves nothing."""
     assert gate.check(_fresh(tree, tmp_path)) == []
 
 
+@normative_only
 def test_a_corrupted_baseline_is_caught(tree: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """The direct case: committed bytes that no longer match what is generated."""
     root = _fresh(tree, tmp_path)
@@ -71,6 +84,7 @@ def test_a_corrupted_baseline_is_caught(tree: pathlib.Path, tmp_path: pathlib.Pa
     assert "regenerated:" in errors[0]
 
 
+@normative_only
 def test_an_orphan_baseline_is_caught(tree: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """A committed artefact the generator no longer produces.
 

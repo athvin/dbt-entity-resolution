@@ -29,6 +29,16 @@ ignore it.
 check is what keeps that true: it regenerates into a temporary directory and
 compares against the committed bytes.
 
+**Byte identity is a SAME-PLATFORM property, and measuring that closed G5.**
+`[RUN]` 2026-08-23, darwin/arm64 vs linux/amd64 (Docker, identical splink,
+duckdb, sqlglot, pandas, model sha and fixture sha): **bytes differ on all six
+artefacts**, while the data is identical on five and `predictions` differs on
+**one pair** -- `max|delta mw| = 1.78e-15`, `max|delta p| = 0`, and **zero edge
+flips** at 0.5 and 0.9. So Appendix A's "exact bit equality" does not survive a
+platform change, the divergence sits far inside A.4's `1e-9 + 1e-12*|mw|`, and
+A.4's *binding* gate -- edge-set membership -- holds exactly. This check is
+therefore binding on linux/amd64 and advisory elsewhere, saying which it is.
+
 **It deliberately does not retrain**, and the reason is a separate measurement.
 `[RUN]`, four processes, same seed and code: EM-trained `m_probability` values
 differ by up to **1.4e-15 relative (~6 ULP)** run to run. Splink's EM is simply
@@ -41,6 +51,7 @@ model is the same model or a different one.
 from __future__ import annotations
 
 import hashlib
+import platform
 import shutil
 import subprocess
 import sys
@@ -55,6 +66,20 @@ MODEL_JSON = ROOT / "fixtures" / "model_jsons" / "fake_1000_v1.json"
 # Below this, the check has stopped checking rather than the project having
 # become simple -- §6.1's vacuous pass, the same floor 3.83 carries.
 MIN_BASELINES = 4
+
+# §22.1 / 3.59: float-exact artefacts are anchored to linux/amd64, and the
+# baselines are committed as minted THERE. Byte identity is a same-platform
+# property, which G5 asked about and this gate answered -- see below.
+NORMATIVE_OS = "linux"
+NORMATIVE_ARCH = {"x86_64": "amd64", "amd64": "amd64"}
+
+
+def on_normative_platform() -> bool:
+    """Report whether byte identity is fair to demand of this machine."""
+    return (
+        platform.system().lower() == NORMATIVE_OS
+        and NORMATIVE_ARCH.get(platform.machine().lower()) == "amd64"
+    )
 
 
 def _sha(path: Path) -> str:
@@ -129,8 +154,27 @@ def check(root: Path = ROOT) -> list[str]:
 
 
 def main() -> int:
-    """Return 0 when every committed baseline regenerates byte-identically."""
+    """Return 0 when every committed baseline regenerates byte-identically.
+
+    **Off linux/amd64 this reports and returns 0**, because the difference it
+    would find is a platform difference and not a defect -- see the module
+    docstring's G5 measurement. It says so out loud rather than printing a bare
+    "OK": §22.1 requires a local run to state which gates it could not really
+    perform, and a gate that silently downgrades itself is worse than one that
+    is simply absent.
+    """
     errors = check()
+    if not on_normative_platform():
+        machine = f"{platform.system().lower()}/{platform.machine().lower()}"
+        sys.stdout.write(
+            f"  ** 3.84 ADVISORY on {machine} **\n"
+            f"  Baselines are committed as minted on linux/amd64 (§22.1, 3.59), and\n"
+            f"  byte identity does not hold across platforms -- G5, measured: max\n"
+            f"  |delta mw| = 1.78e-15, zero edge flips. {len(errors)} difference(s)\n"
+            f"  found here are EXPECTED and are not a local failure. CI is the\n"
+            f"  authority for this gate.\n"
+        )
+        return 0
     for err in errors:
         sys.stderr.write(f"ERROR: {err}\n")
     if errors:
