@@ -3864,6 +3864,29 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     exact failure the boundary exists to prevent, committed inside the repair. Unrecognised shapes are now
     `ER-037`.
 
+82. **The frozen baselines were minted as the wrong product: a BIGINT `unique_id` against a VARCHAR
+    contract.** `gen_baseline.py` read the fixture with `pd.read_csv(fixture)`, which infers `int64`, while
+    `models/staging/er_stg_input.yml` contracts `unique_id: varchar` and
+    `integration_tests/seeds/er_fake_1000.yml` declares it VARCHAR. §1 is explicit that *"a BIGINT id and a
+    VARCHAR id are different products"*.
+
+    It matters because D3's blocking predicate is `l.<uid> < r.<uid>`, and that comparison is
+    type-dependent: `'507' < '64'` is **true** as text and **false** as integers. Measured on the frozen
+    fixture, **148 of 3,989 pairs order differently** — so Stage 3's acceptance criterion, *exact
+    `(unique_id_l, unique_id_r, match_key)` set equality*, would have failed on all 148 against a package
+    that honours its own contract. And the tempting repair — canonicalise orientation inside the
+    comparator — hides exactly the id-type mistake it catches, in a property Stage 6 depends on too (S2).
+
+    **Scoped precisely, because most of the surface was already safe.** `measure_quality.py` re-sorts both
+    sides with `tuple(sorted((str(l), str(r))))`, so every quality number is unaffected — re-minting left
+    `blocking_recall = 0.8124` and `f1@0.5 = 0.8267` unchanged to the digit. `match_key` was already
+    VARCHAR. The defect reached exactly one place: the raw pair set Stage 3 is about to assert on.
+
+    **The re-mint does not re-freeze the model.** `[RUN]` before changing anything: reading `unique_id` as
+    text leaves `u` **bit-identical** and moves `m` by 5e-16 — inside A.4's trained-parameter tolerance and
+    indistinguishable from the EM noise of finding 71. Found while scouting Stage 3, and fixed before the
+    model rather than after, for the same reason as finding 81: PD-4 is what makes it reachable.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`

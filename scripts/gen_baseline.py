@@ -404,7 +404,28 @@ def generate(
     import splink  # noqa: PLC0415
     import sqlglot  # noqa: PLC0415
 
-    frame = pd.read_csv(fixture)
+    # `unique_id` is read as TEXT, and that is a parity decision rather than a
+    # tidiness one. §2.0 contracts it VARCHAR, `integration_tests/seeds/
+    # er_fake_1000.yml` declares it VARCHAR, and DesignDoc §1 is explicit that
+    # "a BIGINT id and a VARCHAR id are different products".
+    #
+    # `pd.read_csv` infers int64, so the baselines were minted as the OTHER
+    # product. D3's blocking predicate is `l.<uid> < r.<uid>`, and that
+    # comparison is type-dependent: `'507' < '64'` is true as text and false as
+    # integers. Measured on the frozen fixture: **148 of 3,989 pairs order
+    # differently**, so Stage 3's acceptance criterion -- exact
+    # `(unique_id_l, unique_id_r, match_key)` set equality -- would have failed
+    # on all 148 against a package that honours its own contract (D.0 finding 82).
+    #
+    # The tempting repair is to canonicalise orientation in the comparator. That
+    # would hide exactly the id-type mistake this catches, and Stage 6 depends on
+    # the same property (S2).
+    #
+    # `[RUN]` before changing it: the trained model is unaffected -- `u` is
+    # bit-identical between the two readings and `m` differs by 5e-16, inside
+    # A.4's trained-parameter tolerance. So this re-mints the pair sets without
+    # re-freezing the model.
+    frame = pd.read_csv(fixture, dtype={"unique_id": str})
 
     # 1. Save the model JSON, then RELOAD it. Section 3.4 is normative that
     #    baselines are generated from a saved-and-reloaded artefact, because
