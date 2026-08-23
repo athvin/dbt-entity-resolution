@@ -346,6 +346,21 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.74",
+        what="project more pairs than the derived budget allows",
+        mutate="noop",
+        command=(
+            "dbt",
+            "run-operation",
+            "er_assert_pair_budget",
+            "--args",
+            "{projected_pairs: 999999999999}",
+            "--project-dir",
+            "integration_tests",
+        ),
+        expect="ER-021",
+    ),
+    Injection(
         standard="3.59",
         what="change one bit of the pinned float reference",
         mutate="noop",

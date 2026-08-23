@@ -1575,6 +1575,27 @@ worth stating twice:
   `er_max_pairs = 42,000,000` was derived from the wide 946 B/pair shape and under-provisions the narrow
   one by roughly 10×. The check needs a home **in the DAG**, firing before Stage 3 materialises: a
   `make` target reports, it does not stop a build (G14).
+  **DONE 2026-08-23 (PC-5).** Measured on DuckDB 1.5.5 by `harness/capacity.py`, and the measurement
+  needed **three qualifiers the inherited 946 B/pair carried none of**:
+
+  | qualifier | effect |
+  |---|---|
+  | **units** — memory, not disk | ~6× (narrow: 53.8 B/pair on disk, 151.7 in memory) |
+  | **entropy** — real data does not compress | ~1.5× (compressible narrow 104.5 → high-entropy 151.7) |
+  | **row count** — fixed overhead amortises | ~2× (280.3 at 25k rows → 140.8 at 800k) |
+
+  The published figures are **memory** figures: 104.5 B/pair reproduces this section's *"measured narrow
+  ~100 B/pair"* almost exactly, so measuring the obvious way — the size of the database file — would
+  over-provision by about six. `er_bytes_per_pair = 152` takes the **conservative** cell (high-entropy,
+  narrow, past convergence), because a guardrail whose failure mode is an OOM should err toward refusing
+  work. `er_max_pairs` is now **derived** — 12 GiB × 0.5 ÷ 152 = 42,384,545 — and G14's home-in-the-DAG
+  is `er_assert_pair_budget()` (**3.74**), raising at compile time from the model about to materialise.
+
+  **Worth stating plainly: the derived cap lands within 1% of the inherited 42,000,000 — for entirely
+  different reasons.** The old figure was 40 GB at 946 B/pair (wide); this is 12 GiB at 152 B/pair
+  (narrow). The constant happened to be about right for the shipped configuration and would have been
+  wrong the moment either premise moved. What changed is not the number; it is that the number is now
+  derived from values a reader can check.
 - **0.7 Comparator sensitivity suite.** `DbtBestPractices.md` §12.7's mutant catalogue, applied to a
   known-good output at every parity stage, with **no mutant permitted to survive** and each asserting the
   **expected localisation string** rather than merely failing. Sized at one day and *"the cheapest

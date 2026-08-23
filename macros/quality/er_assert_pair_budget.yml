@@ -1,0 +1,42 @@
+---
+version: 2
+
+macros:
+  - name: er_assert_pair_budget
+    description: >
+      3.74 / Stage 0.6 / D11 rec 5. The pair-budget guard, called from a
+      pair-grain model BEFORE it materialises. Raises `ER-021` at compile time
+      when the projected pair count exceeds `er_max_pairs`, naming the
+      projection, the cap, and both converted to GiB at the measured per-pair
+      cost so the numbers are checkable rather than opaque.
+
+
+      G14 is why this is a macro and not a `make` target: "a Makefile target
+      reports; it does not stop a build." A report that arrives after the OOM is
+      a post-mortem.
+
+
+      It can only be a HARD stop. Nothing interrupts an over-large build partway
+      -- G13 measured that DuckDB 1.5.5 exposes no statement timeout, and D4a
+      measured `USING KEY` clustering OOMing rather than degrading. `memory_limit`
+      is the real backstop and it fails hard rather than shedding load.
+
+
+      The cap it reads is DERIVED, not a constant: `er_max_pairs` comes from
+      `er_bytes_per_pair` and the configured memory budget, both stated beside it
+      in `dbt_project.yml`. That is deliberate, so that raising the cap to make a
+      build pass is visibly the wrong move -- it does not create memory, and the
+      error message says so.
+
+    arguments:
+      - name: projected_pairs
+        type: integer
+        description: >
+          The blocking-rule cardinality estimate for the relation about to be
+          materialised. Passing `none` raises `ER-020`: a budget check that does
+          not know the size it is checking is not a check.
+      - name: model_name
+        type: string
+        description: >
+          Optional label for the error message. Defaults to `this.identifier`
+          when called from a model.
