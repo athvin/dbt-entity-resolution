@@ -1526,11 +1526,18 @@ worth stating twice:
 - 0.2 Vendor `fake_1000`; seeded synthetic generator. Include the **degenerate-corpus fixture set** G9
   asks for: empty corpus, single row, all-identical records, an all-NULL blocking column, a NULL
   `unique_id`, and two records sharing a `unique_id`.
-  **Partially done 2026-08-23 (PC-1).** `fake_1000` is vendored at `fixtures/source/` with a sha-verified
+  **DONE 2026-08-23 (PC-1, completed by PC-1c).** `fake_1000` is vendored at `fixtures/source/` with a sha-verified
   manifest — *not* read through `splink_datasets`, which downloads it from a mutable `master` ref at
   attribute-access time (Appendix D.0 finding 37). All six degenerate corpora exist under
   `fixtures/degenerate/`, each with a manifest stating what it probes. **The seeded synthetic generator is
-  still outstanding** and is what `er_max_pairs` (0.6) and the scale work will need.
+  `harness/generate.py`**, calibrated against the vendored fixture rather than invented — cluster sizes
+  1–7, per-attribute missingness 17–21%, and `dob` never null, all measured from `fake_1000`.
+
+  **It complements the reference fixture rather than duplicating it.** `[RUN]`: precision on `fake_1000`
+  is **1.0000 at every threshold** — it produces no false positives at all, so no gate built on it can
+  detect a precision regression. Generated corpora measure 0.9798 and 0.9847 across two seeds, because the
+  name pool is deliberately small and distinct personas can resemble each other. **A fixture that cannot
+  fail in a given way cannot defend against it** — §12.7's argument about comparators, applied to data.
 - 0.3 `gen_baseline.py` dumping every intermediate as parquet with a manifest.
   **DONE 2026-08-23 (PC-4).** `scripts/gen_baseline.py` → `fixtures/baselines/fake_1000/`:
   `predictions.parquet` (3,349 pairs, **37 columns**) and clusters at all three of Stage 6's thresholds,
