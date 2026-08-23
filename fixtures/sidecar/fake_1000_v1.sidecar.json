@@ -1,6 +1,66 @@
 {
   "asymmetric_levels": [],
   "comparisons": 5,
+  "er_bf_columns": [
+    {
+      "data_type": "DOUBLE",
+      "name": "bf_first_name"
+    },
+    {
+      "data_type": "DOUBLE",
+      "name": "bf_tf_adj_first_name"
+    },
+    {
+      "data_type": "DOUBLE",
+      "name": "bf_surname"
+    },
+    {
+      "data_type": "DOUBLE",
+      "name": "bf_tf_adj_surname"
+    },
+    {
+      "data_type": "DOUBLE",
+      "name": "bf_dob"
+    },
+    {
+      "data_type": "DOUBLE",
+      "name": "bf_city"
+    },
+    {
+      "data_type": "DOUBLE",
+      "name": "bf_tf_adj_city"
+    },
+    {
+      "data_type": "DOUBLE",
+      "name": "bf_email"
+    },
+    {
+      "data_type": "DOUBLE",
+      "name": "bf_tf_adj_email"
+    }
+  ],
+  "er_gamma_columns": [
+    {
+      "data_type": "INTEGER",
+      "name": "gamma_first_name"
+    },
+    {
+      "data_type": "INTEGER",
+      "name": "gamma_surname"
+    },
+    {
+      "data_type": "INTEGER",
+      "name": "gamma_dob"
+    },
+    {
+      "data_type": "INTEGER",
+      "name": "gamma_city"
+    },
+    {
+      "data_type": "INTEGER",
+      "name": "gamma_email"
+    }
+  ],
   "er_model_sha": "fc832931150d6d3de60326517dad54e40ed3b4a9a8d4b9e00d137c23dcfff978",
   "levels_validated": 28,
   "resolved": {

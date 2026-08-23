@@ -346,6 +346,20 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.81",
+        what="declare bf_tf_adj_ for a comparison that has no TF adjustment",
+        mutate="noop",
+        command=("pytest", "tests_python/test_column_drift_guard.py", "-q", "--no-header"),
+        expect="assert",
+        edits=(
+            (
+                "scripts/er_sidecar.py",
+                'if any(level["tf_u_exact_match"] is not None for level in comparison["levels"]):',
+                "if True:",
+            ),
+        ),
+    ),
+    Injection(
         standard="3.80",
         what="use LEAST instead of GREATEST for the term-frequency divisor",
         mutate="noop",
