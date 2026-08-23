@@ -1,0 +1,15 @@
+---
+# Provenance for a HAND-AUTHORED degenerate fixture (3.62, G9).
+#
+# Section 5 Stage 0.2 requires the degenerate-corpus set: empty corpus, single
+# row, all-identical records, an all-NULL blocking column, a NULL unique_id, and
+# two records sharing a unique_id. `fake_1000` exercises none of them, and each
+# is a shape where a pipeline can report success while computing nothing.
+kind: synthetic
+path: single_row.csv
+authored: 2026-08-23
+generator: hand-authored
+shape: 1 record, 0 possible pairs
+probes: >-
+  One record. No pair can be formed, so every pair-grain relation is legitimately empty --
+  which must be distinguishable from a blocking rule that silently matched nothing.

@@ -1,0 +1,29 @@
+---
+# Provenance for a VENDORED fixture (3.62).
+#
+# `splink_datasets.fake_1000` DOWNLOADS this file from raw.githubusercontent.com
+# at attribute-access time -- it is not bundled with the splink wheel. Every
+# baseline generated through that accessor therefore depends on a network fetch
+# from a mutable `master` ref, and nothing would have noticed if it changed.
+#
+# Section 5's word is "vendor", and this is why: the parity oracle's input must
+# be a committed byte sequence with a recorded hash, not a URL.
+kind: vendored
+path: fake_1000.csv
+sha256: 66f9b8f92b9b082ef982fe18c77030fbed8780f06ce1d40d7106be5a72392e2a
+bytes: 55983
+rows: 1000
+retrieved: 2026-08-23
+source_url: >-
+  https://raw.githubusercontent.com/moj-analytical-services/splink_datasets/master/data/fake_1000.csv
+upstream_repo: https://github.com/moj-analytical-services/splink_datasets
+licence: MIT
+copyright: Copyright (c) 2023 MoJ Analytical Services
+columns: [unique_id, first_name, surname, dob, city, email, cluster]
+# A.5 / M12: `cluster` is machine-checked ground truth, which is what makes the
+# F1 and recall floors in section 1.8 measurable at all.
+ground_truth_column: cluster
+notes: >-
+  Retrieved from a mutable `master` ref, so the upstream file may drift; the
+  sha256 above is what this project means by fake_1000 and `check_baseline_manifests.py`
+  verifies it on every run. Person-shaped but synthetic (DesignDoc section 20.4).

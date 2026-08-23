@@ -1,0 +1,15 @@
+---
+# Provenance for a HAND-AUTHORED degenerate fixture (3.62, G9).
+#
+# Section 5 Stage 0.2 requires the degenerate-corpus set: empty corpus, single
+# row, all-identical records, an all-NULL blocking column, a NULL unique_id, and
+# two records sharing a unique_id. `fake_1000` exercises none of them, and each
+# is a shape where a pipeline can report success while computing nothing.
+kind: synthetic
+path: all_null_blocking_column.csv
+authored: 2026-08-23
+generator: hand-authored
+shape: 3 records, surname 100% NULL
+probes: >-
+  `surname` is NULL for every record. Splink's blocking on a NULL column produces no pairs
+  from that rule; the recall floor must not be satisfied by a rule that cannot fire.

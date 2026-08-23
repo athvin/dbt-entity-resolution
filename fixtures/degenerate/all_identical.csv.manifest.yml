@@ -1,0 +1,16 @@
+---
+# Provenance for a HAND-AUTHORED degenerate fixture (3.62, G9).
+#
+# Section 5 Stage 0.2 requires the degenerate-corpus set: empty corpus, single
+# row, all-identical records, an all-NULL blocking column, a NULL unique_id, and
+# two records sharing a unique_id. `fake_1000` exercises none of them, and each
+# is a shape where a pipeline can report success while computing nothing.
+kind: synthetic
+path: all_identical.csv
+authored: 2026-08-23
+generator: hand-authored
+shape: 4 records, 6 pairs, 1 cluster
+probes: >-
+  Four byte-identical records. Every comparison is at its maximum level, term frequency for
+  every value is 1.0, and the whole corpus is one cluster. Probes the TF denominator
+  (DesignDoc section 3.5) and the m/u degenerate case.

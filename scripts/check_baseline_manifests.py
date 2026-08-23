@@ -19,6 +19,7 @@ Both are the same failure: a baseline that is wrong in a way no diff shows.
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from typing import TYPE_CHECKING, Any
 
@@ -32,21 +33,39 @@ if TYPE_CHECKING:
 
 FIXTURES = "fixtures"
 
-# Artefacts that need a sidecar. Model JSONs are baselines too -- section 5's
-# tree is "model JSONs, Splink baselines, each with a .manifest.yml".
-_BASELINE_SUFFIXES = (".parquet", ".json")
+# Artefacts that need a sidecar. Section 5's tree is "model JSONs, Splink
+# baselines, each with a .manifest.yml" -- and .csv is here because a VENDORED
+# fixture needs provenance more urgently than a generated one, not less:
+# `splink_datasets.fake_1000` downloads from a mutable `master` ref at
+# attribute-access time, so without a recorded hash "fake_1000" names whatever
+# that URL served most recently.
+_BASELINE_SUFFIXES = (".parquet", ".json", ".csv")
 
-# Section 20.1, in full. Each is here because its absence is undetectable later.
-_REQUIRED = (
-    "splink_version",
-    "model_json_sha256",
-    "seed",
-    "duckdb_version",
-    "sqlglot_version",
-    "platform",
-    "date",
-    "producing_commit",
-)
+# Three kinds of artefact live under fixtures/, and they cannot share one field
+# list: a generated baseline records how it was produced, a vendored file
+# records where it came from, and a hand-authored fixture records what it probes.
+_KIND_FIELDS = {
+    "baseline": (
+        "splink_version",
+        "model_json_sha256",
+        "seed",
+        "duckdb_version",
+        "sqlglot_version",
+        "platform",
+        "date",
+        "producing_commit",
+    ),
+    "vendored": (
+        "sha256",
+        "bytes",
+        "retrieved",
+        "source_url",
+        "licence",
+        "copyright",
+    ),
+    "synthetic": ("authored", "generator", "shape", "probes"),
+}
+
 
 # The platform triple, `(os, architecture, DuckDB build)`.
 _PLATFORM_KEYS = ("os", "architecture", "duckdb_build")
@@ -66,13 +85,26 @@ def _baselines(base: Path) -> list[Path]:
     )
 
 
-def _field_errors(name: str, manifest: dict[str, Any]) -> list[str]:
-    """Return every missing or malformed provenance field."""
+def _field_errors(name: str, manifest: dict[str, Any], artefact: Path) -> list[str]:
+    """Return every missing or malformed provenance field for this artefact's kind."""
     errors: list[str] = []
-    for field in _REQUIRED:
+    kind = manifest.get("kind")
+    if kind not in _KIND_FIELDS:
+        return [
+            (
+                f"{name}: manifest declares kind={kind!r}; expected one of "
+                f"{sorted(_KIND_FIELDS)}. Without a kind there is no way to know "
+                f"which provenance fields apply, so none can be required."
+            )
+        ]
+
+    for field in _KIND_FIELDS[kind]:
         value = manifest.get(field)
         if value is None or (isinstance(value, str) and not value.strip()):
-            errors.append(f"{name}: manifest is missing `{field}` (section 20.1).")
+            errors.append(f"{name}: manifest is missing `{field}` (kind={kind}, section 20.1).")
+
+    if kind == "vendored":
+        errors.extend(_vendored_errors(name, manifest, artefact))
 
     platform = manifest.get("platform")
     if platform is not None:
@@ -97,6 +129,30 @@ def _field_errors(name: str, manifest: dict[str, Any]) -> list[str]:
             f"{_SHA256_LEN}. A truncated hash still compares equal to itself."
         )
 
+    return errors
+
+
+def _vendored_errors(name: str, manifest: dict[str, Any], artefact: Path) -> list[str]:
+    """Verify a vendored file against its recorded hash.
+
+    Recording a hash and never checking it is the same class of defect as a
+    `[VERIFIED]` marker nobody re-earns: it looks like provenance and asserts
+    nothing. This is the check that makes vendoring worth the bytes.
+    """
+    declared = str(manifest.get("sha256", "")).strip()
+    if not declared:
+        return []
+    actual = hashlib.sha256(artefact.read_bytes()).hexdigest()
+    errors: list[str] = []
+    if actual != declared:
+        errors.append(
+            f"{name}: sha256 is {actual}, manifest says {declared}. The vendored "
+            f"file and its provenance disagree -- every baseline generated from it "
+            f"is unattributable."
+        )
+    size = manifest.get("bytes")
+    if isinstance(size, int) and size != artefact.stat().st_size:
+        errors.append(f"{name}: {artefact.stat().st_size} bytes on disk, manifest says {size}.")
     return errors
 
 
@@ -137,7 +193,7 @@ def check(root: Path = ROOT) -> list[str]:
         if not isinstance(loaded, dict):
             errors.append(f"{name}: sidecar is not a YAML mapping.")
             continue
-        errors.extend(_field_errors(name, loaded))
+        errors.extend(_field_errors(name, loaded, baseline))
 
     sys.stdout.write(f"3.62: {len(baselines)} baseline(s) checked.\n")
     return errors
