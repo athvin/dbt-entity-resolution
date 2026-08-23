@@ -293,6 +293,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 
 | | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.75 | The model JSON passes the §1.5 trust boundary before anything builds | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact | P + CI | Non-zero exit naming the level and the function |
+| 3.76 | The A.2 sidecar regenerates byte-identically from its model JSON | `scripts/er_sidecar.py --check` compares the committed artefact against a fresh resolution; resolution is **Splink's own**, never a reimplementation | P + CI | Non-zero exit naming the drifted file |
 
 > **On 3.75 — matching the tree, and matching EVERY alias.** §1.5 requires validation against the parsed
 > tree because *"validating the raw string instead of the parsed tree is what makes an allow-list
@@ -3548,6 +3549,22 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     `Func` subclasses in sqlglot**: `exp.Or` reports `sql_names() == ["OR"]`, so an ordinary
     `a = b OR c IS NULL` was rejected as calling an unlisted function `or`. `exp.Connector` is what
     separates an operator from a call.
+
+56. **`--check` silently overwrote the file it was meant to check.** The flag was added in the same edit
+    that `ruff format` had already collapsed the write call onto one line, so the multi-line replacement
+    matched nothing and the check branch was never inserted. `--check` therefore ran the *write* path:
+    **exit 0, and the artefact it claimed to verify replaced instead.** Caught only because the success
+    message it was supposed to print never appeared. This is the repository's own recurring shape — a
+    verb that reports success while doing something else — reproduced by me, in the tool built to prevent
+    drift. Now proven both ways: clean regeneration passes, and one altered probability fails with exit 1.
+
+57. **A.2 C2's four measured cases reproduce exactly on splink 4.0.16.** `"name_r" = "name_l"` → exact;
+    `NOT ("name_l" <> "name_r")` → exact; `"name_l" = "name_r" AND 1=1` → **not** exact;
+    `lower(a_l) = lower(a_r)` → **not** exact. A string match would call two of those wrong in one
+    direction and two in the other, which is precisely why A.2 forbids approximating it. **The sidecar
+    calls Splink's own resolution rather than reimplementing it** — reimplementing the CNF analysis in
+    Python would be the Jinja mistake one language along — and a test asserts structurally that it still
+    does, so a future "simplification" that inlines the logic fails.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both

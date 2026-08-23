@@ -376,16 +376,133 @@ def validate(raw: str, bounds: dict[str, int] | None = None) -> dict[str, Any]:
     }
 
 
+def build(raw: str, bounds: dict[str, int] | None = None) -> dict[str, Any]:
+    """Validate, then resolve. The sidecar artefact in full.
+
+    Order matters: **nothing is resolved until it has been validated.** Resolving
+    first would mean importing an unvalidated model JSON into Splink, which is
+    the trust boundary §1.5 exists to hold.
+    """
+    validated = validate(raw, bounds)
+    return {
+        "er_model_sha": validated["er_model_sha"],
+        "levels_validated": validated["levels_validated"],
+        "comparisons": validated["comparisons"],
+        "resolved": resolve(validated["model"]),
+    }
+
+
+def resolve(model: dict[str, Any]) -> dict[str, Any]:
+    """Resolve what Jinja provably cannot (A.2 C2, C3, C4).
+
+    **Splink's own code does the resolving.** A.2 sanctions it -- the sidecar is
+    *"produced by a Python preprocessing step that imports Splink"* -- and it is
+    the only way to be exact rather than approximate. A.2 C2 measured what
+    string-matching gets wrong **in both directions**:
+
+    | condition | exact match? |
+    |---|---|
+    | `"name_r" = "name_l"` | **True** (reversed order still counts) |
+    | `NOT ("name_l" <> "name_r")` | **True** (negated inequality counts) |
+    | `"name_l" = "name_r" AND 1=1` | **False** (an extra conjunct disqualifies) |
+    | `lower(a_l) = lower(a_r)` | **False** (a function application disqualifies) |
+
+    Splink reaches those answers via `simplify(normalize(tree))` to CNF, then
+    compares **tree signatures**. Reimplementing that in Python would be the same
+    mistake as approximating it in Jinja, one language along -- so this calls it.
+    The four cases above are pinned as tests, which is what catches a Splink
+    internal moving under us.
+    """
+    from splink.internals.comparison import Comparison  # noqa: PLC0415
+
+    resolved_comparisons: list[dict[str, Any]] = []
+    for comparison in model.get("comparisons") or []:
+        levels = comparison.get("comparison_levels") or []
+        name = comparison.get("output_column_name")
+        built = Comparison(levels, sqlglot_dialect="duckdb", output_column_name=name)
+
+        resolved_levels: list[dict[str, Any]] = []
+        for level in built.comparison_levels:
+            # Null levels have no m or u -- Splink raises rather than returning
+            # None, so the absence is a property to record, not an error.
+            is_null = bool(level.is_null_level)
+            resolved_levels.append(
+                {
+                    "comparison_vector_value": level.comparison_vector_value,
+                    "is_null_level": is_null,
+                    "is_exact_match": _safely(
+                        lambda lv=level: bool(lv._is_exact_match)  # noqa: SLF001
+                    ),
+                    "m_probability": None
+                    if is_null
+                    else _safely(lambda lv=level: lv.m_probability),
+                    "u_probability": None
+                    if is_null
+                    else _safely(lambda lv=level: lv.u_probability),
+                    # Resolved only where the level carries a TF adjustment;
+                    # Splink raises otherwise, and None is the right answer.
+                    "tf_u_exact_match": _safely(
+                        # `levels` is bound too: B023 -- without it the lambda
+                        # would close over the loop variable, which is a real
+                        # bug waiting for the day this stops being eager.
+                        lambda lv=level, levels=built.comparison_levels: (
+                            lv._u_probability_corresponding_to_exact_match(levels)  # noqa: SLF001
+                        )
+                    ),
+                }
+            )
+        resolved_comparisons.append({"output_column_name": name, "levels": resolved_levels})
+
+    return {
+        "comparisons": resolved_comparisons,
+        # A.2 C3. `inference.py:227-246` rewrites link_only -> two_dataset_link_only
+        # when there are exactly two input tables -- a RUNTIME fact, not a JSON one.
+        "er_backend_link_type": model.get("link_type", "dedupe_only"),
+        # A.2 C3's measured trap: `source_dataset_column_name` is present in the
+        # JSON even for dedupe_only, while the runtime input column is None. The
+        # JSON's key is therefore NOT evidence that a source dataset exists.
+        "er_has_source_dataset": bool(model.get("source_dataset_column_name"))
+        and model.get("link_type") != "dedupe_only",
+        # A.2 C4. `min(templated_name)` over input-table aliases, which is not in
+        # the JSON at all -- so it stays null until a two-table configuration
+        # supplies it, and Open Question 3 governs refusing the configuration.
+        "er_left_table": None,
+    }
+
+
+def _safely(call: Any) -> Any:
+    """Return `call()`, or None where Splink raises because the value is absent.
+
+    Splink signals "this level has no m-probability" and "this level has no
+    exact-match level to draw a TF u from" by raising. Both are legitimate
+    states of a valid model, so the absence is recorded rather than propagated.
+    """
+    try:
+        return call()
+    except Exception:  # noqa: BLE001 - absence is signalled by several types
+        return None
+
+
 def main() -> int:
     """Validate a model JSON and emit the sidecar artefact."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model_json", type=Path)
-    parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="write the resolved sidecar artefact here (A.2's committed, hashed file)",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="regenerate and compare byte-for-byte against --out, without writing",
+    )
     args = parser.parse_args()
 
     raw = args.model_json.read_text(encoding="utf-8")
     try:
-        artefact = validate(raw)
+        artefact = build(raw) if (args.out or args.check) else validate(raw)
     except ValidationError as err:
         for finding in err.findings:
             sys.stderr.write(f"ERROR: {finding}\n")
@@ -401,8 +518,30 @@ def main() -> int:
         f"{artefact['levels_validated']} level(s), "
         f"er_model_sha={artefact['er_model_sha'][:12]}...\n"
     )
-    if args.out:
-        args.out.write_text(json.dumps(artefact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if not args.out:
+        return 0
+
+    rendered = json.dumps(artefact, indent=2, sort_keys=True) + "\n"
+
+    # A.2: "Guard it with a byte-equality regeneration test." A generated file
+    # that has drifted from its generator is worse than no generated file,
+    # because every downstream consumer trusts it.
+    if args.check:
+        if not args.out.is_file():
+            sys.stderr.write(f"ERROR: {rel(args.out, ROOT)} does not exist; run without --check.\n")
+            return 1
+        if args.out.read_text(encoding="utf-8") != rendered:
+            sys.stderr.write(
+                f"ERROR: {rel(args.out, ROOT)} is not what this model JSON generates. "
+                f"Regenerate it -- a sidecar that has drifted from its model JSON is "
+                f"a contract nobody is honouring (A.2).\n"
+            )
+            return 1
+        sys.stdout.write(f"  {rel(args.out, ROOT)} regenerates byte-identically.\n")
+        return 0
+
+    args.out.write_text(rendered, encoding="utf-8")
+    sys.stdout.write(f"  wrote {rel(args.out, ROOT)}\n")
     return 0
 
 

@@ -346,6 +346,27 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.76",
+        what="let the committed sidecar drift from its model JSON",
+        mutate="noop",
+        command=(
+            "python",
+            "scripts/er_sidecar.py",
+            "fixtures/model_jsons/fake_1000_v1.json",
+            "--out",
+            "fixtures/sidecar/fake_1000_v1.sidecar.json",
+            "--check",
+        ),
+        expect="drifted from its model JSON",
+        edits=(
+            (
+                "fixtures/sidecar/fake_1000_v1.sidecar.json",
+                '"m_probability": 0.5535789943115097',
+                '"m_probability": 0.5',
+            ),
+        ),
+    ),
+    Injection(
         standard="3.75",
         what="put a non-deterministic function in a comparison level",
         mutate="write:fixtures/model_jsons/hostile.json:"
