@@ -275,6 +275,20 @@ INJECTIONS: tuple[Injection, ...] = (
         expect="nested `unit_tests:` key",
     ),
     Injection(
+        standard="3.46",
+        what="coerce match_key before comparing -- the comparator can no longer fail",
+        mutate="noop",
+        command=("pytest", "harness", "-q", "--no-header", "-x"),
+        expect="MUTANT SURVIVED",
+        edits=(
+            (
+                "harness/comparators.py",
+                "            if got == want and type(got) is type(want):",
+                "            if str(got) == str(want):",
+            ),
+        ),
+    ),
+    Injection(
         standard="3.73",
         what="restore a second copy of a live config file into the document",
         mutate="noop",
@@ -326,8 +340,8 @@ INJECTIONS: tuple[Injection, ...] = (
         edits=(
             (
                 "scripts/pending_subjects.yml",
-                "  - path: PARITY.md\n    check: check_divergence_log.py",
-                "  - path: PARITY.md.disabled\n    check: check_divergence_log.py",
+                "  - path: docs/PARITY.md\n    check: check_divergence_log.py",
+                "  - path: docs/PARITY.md.disabled\n    check: check_divergence_log.py",
             ),
         ),
     ),

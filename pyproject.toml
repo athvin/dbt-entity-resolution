@@ -121,6 +121,12 @@ ignore = [
 # carry one; see the section 6.1 blind-spot tests.
 "tests_python/**" = ["S101", "PLR2004", "INP001", "D103"]
 "harness/**" = ["S101", "PLR2004", "INP001", "D103"]
+# PLR0913 on the comparators specifically. Their parameters ARE A.4's tolerance
+# table -- key columns, the weight and probability column names, the threshold
+# list, the artefact label, the logged-divergence set. Every one is
+# keyword-only, and collapsing them into a config object would hide the thing a
+# reviewer most needs to see: which gate is being applied to which columns.
+"harness/comparators.py" = ["S101", "PLR2004", "INP001", "D103", "PLR0913"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -131,7 +137,7 @@ strict = true
 # `dbt_bouncer_checks` before they existed made mypy resolve two absent trees to
 # the same module and fail with "Duplicate module named __main__", which reads
 # like a mypy bug and is not one.
-files = ["scripts", "tests_python"]
+files = ["scripts", "tests_python", "harness"]
 explicit_package_bases = true
 # The tests import the scripts by module name, which is how they are invoked in
 # anger (`python scripts/check_yml_pairing.py`). Without this, mypy resolves the

@@ -263,7 +263,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | 3.43 | Waivers are per-check, reasoned, capped, and printed on every run | `er_standards_exempt` is a mapping of model → \[check, …\] with a reason; CI asserts the cap; the macro echoes the active list in its success message | C + CI | Compile failure / cap assertion fails |
 | 3.44 | `[VERIFIED]` markers match the installed toolchain | `scripts/check_verified_markers.py` compares §4's pins against `uv.lock` and the document's verified-against block | P + CI | Non-zero exit naming the demoted markers |
 | 3.45 | A superseding `DesignDoc` decision names the sections it invalidates | Reference check: every `D<n>` marked superseding carries a `Supersedes:` line resolving to real sections | CI | Job fails |
-| 3.46 | The parity comparator is proved capable of failing | Comparator sensitivity suite (§12.7): a mutant catalogue per stage; **no mutant may survive** | CI | Job fails naming the surviving mutant |
+| 3.46 | The parity comparator is proved capable of failing | `harness/test_comparator_sensitivity.py` over `harness/mutants` — §12.7's catalogue applied to a known-good output; **no mutant may survive**, and each asserts its expected localisation string | CI | Job fails naming the surviving mutant |
 | 3.47 | Fixture coverage: every gamma cell and every `match_key` is exercised | Data test over the built comparison vectors, ≥ `er_min_gamma_cell_observations` each; matrix published as an artefact | B + CI | Test fails; artefact shows the empty cells |
 | 3.48 | Run identity is in the data, and excluded from every hash | `er_run_id` on every materialised model + `_er_run_manifest` (§14.9); policy macro asserts every run-contract column also appears in `er_volatile_columns` | B + C | Build/compile failure |
 | 3.49 | Every deliberate divergence has both a log entry and a pinning test | `scripts/check_divergence_log.py`, both directions | CI | Non-zero exit |
@@ -3301,6 +3301,16 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     `.sqlfluffignore` — outside Appendix C, exactly where RC40 said they lived, and exactly what a sweep of
     Appendix C would have skipped. Reducing the document once is a cleanup; the rule is what stops it
     regrowing.
+
+34. **The comparator suite was itself verified by breaking the comparator, not by watching it pass.** A
+    sensitivity suite that goes green on its first run proves nothing — it is the same "observed to pass,
+    never observed to fail when violated" gap §0 opens with, one level up from the gates. So four defects
+    were injected into `harness/comparators.py` in a scratch copy, and each was caught **by the mutant
+    designed for it**: dtype coercion on `match_key` left `coerce_match_key_to_int` surviving; degrading
+    the cluster gate to partition equality left `relabel_one_component` surviving, which is M6's finding
+    reproduced on demand; dropping NULL keys before diffing left `inject_null_key` surviving; and a wrong
+    join key failed **13 of 24 tests**, which is §12.7's opening scenario made loud instead of green. The
+    mutants are not a checklist — each one maps to a specific way the comparator can be wrong.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
