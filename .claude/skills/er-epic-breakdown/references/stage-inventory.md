@@ -1,10 +1,16 @@
 # Stage inventory — the union of §5 and A.5
 
-**Status: UNRECONCILED.** `DesignDoc.md` §B.3 carries **DR-11 as CONFLICT** — §5 and A.5 are two normative inventories, and R3 instructs "reconcile to one list". That reconciliation has not happened.
+> **Status: RECONCILED, 2026-08-23. This file is now a secondary source — read `DesignDoc.md` §5 instead.**
+>
+> **DR-11 is CURRENT** and R3 is closed: §5 absorbed A.5 and is the single inventory. A.5 is retained in `DesignDoc.md` as evidence and is stale wherever the two disagree.
+>
+> Three things this file still records as open were *decided* by that reconciliation. **Stage 2b** closes as the explicit non-goal — v1 is full-rebuild, `is_incremental()` and the record-lifecycle machinery move to v2 together (§5 Stage 8). **Stage 4's** AC relaxes to *reachable* threshold constants. **`entity_clusters_1to1`** is tagged v2. The per-stage blocking decisions below — DR-16, DR-17, B.1, B.8, DR-08, DR-09, DR-12 — are still open and still block.
+>
+> **Where this file and §5 disagree, §5 is right.** It is kept because its sizing table, its per-stage traps and its reusable-oracle pointers are planning material that does not live in §5 — not because it is a second inventory. Prefer §5 for *what the stages are*; use this for *what to watch out for*.
 
-This file is **not** the reconciliation. It is the *union*, assembled so a planner sees the whole superset instead of silently planning from whichever list they opened. Every row states which document it came from. Where the two disagree, both readings are shown and the row is marked `CONFLICT` — closing it is the user's call, per §B.5 item 6.
+This file was assembled as the *union* of the two inventories, so a planner saw the whole superset instead of silently planning from whichever list they opened. Every row states which document it came from.
 
-Precedence, when you must pick one to quote (`DbtBestPractices.md` §1.1): measured `[RUN]`/`[RECON]` findings in Appendix A → numbered decisions D1–D11 → the companion → habit. Within `DesignDoc.md`, the body is normative and appendices are evidence — which is *why* A.5's changes are not automatically in force, and why DR-11 is a conflict rather than an obvious win for A.5.
+Precedence, when you must pick one to quote (`DbtBestPractices.md` §1.1): measured `[RUN]`/`[RECON]` findings in Appendix A → numbered decisions D1–D12 **and the §B.3 register** → the companion → habit. Within `DesignDoc.md`, the body is normative and appendices are evidence, **with §B.3 carved out by name as normative for decision *status***. That body-over-appendix rule is *why* A.5's changes were not automatically in force, and why DR-11 was a conflict rather than an obvious win for A.5.
 
 ---
 

@@ -58,7 +58,7 @@ A = CONFLICT, B = MISSING, C = OPEN with a fired deadline, D = OPEN and schedule
 
 | Row | Class | Blocks | Status | Closed by |
 |---|---|---|---|---|
-| DR-11 stage inventory | **A** | every stage | open | PA-1 |
+| DR-11 stage inventory | **A** | every stage | ✅ **CURRENT 2026-08-23** — §5 is the single inventory | PA-1 (#2) |
 | DR-17 model JSON trust boundary | **B** | Stage 1 | open | PA-3 |
 | DR-16 input contract | **B** | Stage 1, anything reading `stg_input` | open | PA-4 |
 | B.1 / DR-13 runtime substrate | **C** | Stage 0.3 | open | PA-5 |
@@ -80,9 +80,9 @@ DR-15, DR-21.
 Ids are `PA-n` … `PE-n`, prefixed because bare `A`–`E` and `D1`–`D12` already mean Appendix A–E and
 decisions D1–D12 in these documents. Full descriptions live in the approved plan.
 
-**In flight:** PL-0 — this file.
+**In flight:** PA-1 — close DR-11 / R3.
 
-**Done:** *(none yet)*
+**Done:** PL-0 (#1, `5711322`) · PA-1 (#2)
 
 **Next, in dependency order:**
 
@@ -131,6 +131,7 @@ Newest first. One line per shipped change, plus anything that changed the plan.
 
 | Date | Event |
 |---|---|
+| 2026-08-23 | **PA-1 — DR-11 closed.** §5 absorbed A.5 and is the single stage inventory; A.5 retained as evidence. Merge scope was RC29's enumeration, not R3's shorter list. Also closed: R3, RC1, RC7, RC8, RC9, RC11, RC12, RC14, RC32. Decided along the way, each recorded at its point of change: Stage 2b closes as the **explicit non-goal** (v1 is full-rebuild; `is_incremental()` and record lifecycle move to v2 together), Stage 4 relaxes to **reachable** threshold constants, `entity_clusters_1to1` is **tagged v2**. `doc_index.py` fixed twice — it labelled a `CURRENT` row's stage mentions "blocks", and its per-stage reconciliation caveat outlived the conflict it described. |
 | 2026-08-23 | Loop established. Repository is docs-only: no dbt project, no CI, no fixtures. `git rev-list --objects --all` returns 41 objects across two commits, confirming the scaffold Appendix D records as deleted is not recoverable from history. |
 
 ---

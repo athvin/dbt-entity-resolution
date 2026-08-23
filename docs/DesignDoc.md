@@ -37,17 +37,23 @@
 > the body is silent, the appendix stands. This rule is stated because its absence was load-bearing:
 > see §B.1 **G1**, where one decision had four live statements and the companion document
 > implemented the superseded one.
+>
+> **§B.3 is carved out of that rule by name.** The decision register is **normative for decision
+> *status*** — which value is in force, and where it lives. The body stays normative for decision
+> *content*. **Any body edit that changes a decision must touch its DR row in the same commit**, which is
+> `DbtBestPractices.md` 3.45's `Supersedes:` pattern applied one level up.
+>
+> Without the carve-out, the rule pointed at its own cure: the v2 note calls the register *"the artifact
+> that keeps this document's history of reversals auditable"* and says to treat `CONFLICT` and `MISSING`
+> rows as blocking, while the unqualified rule classed the register as evidence any body paragraph
+> silently outranks. At the next reversal a body edit and a DR row could disagree, and the rule as written
+> would pick the body without anyone noticing the row — G1's exact mechanism.
+>
+> The companion carries the mirror half at `DbtBestPractices.md` §1.1, where the register ranks with
+> tier 2 and G/R findings rank as Appendix-A-class evidence.
 
-> **[REVIEW 2026-08-23] RC1 — This rule and the v2 note above it pull in opposite directions.** The note
-> says to treat §B.3's `CONFLICT` and `MISSING` rows as blocking and calls the register "the artifact that
-> keeps this document's history of reversals auditable"; this rule classes Appendix B — register included —
-> as evidence any body paragraph silently outranks. That is G1's mechanism pointed at G1's own cure: at
-> the next reversal, a body edit and a DR row can disagree and the rule as written picks the body, without
-> anyone noticing the row. Carve out §B.3 by name: the register is normative for decision *status* (which
-> value is in force, and where it lives), the body stays normative for decision *content*, and any body
-> edit that changes a decision must touch its DR row in the same commit — the companion's 3.45
-> `Supersedes:` pattern, one level up. State the carve-out here and in `DbtBestPractices.md` §1.1, which
-> currently ranks Appendix B in no tier at all (see the review note there).
+> **[REVIEW 2026-08-23] Fixed (F16) — RC1 is closed by the carve-out above**, and its companion half by
+> the §1.1 edit RC32 asked for.
 
 > **`GOAL.md` sits outside that order, deliberately.** The repository root carries
 > [`GOAL.md`](../GOAL.md), a one-page statement of the destination: Splink's data transformations as
@@ -1067,14 +1073,34 @@ failure through a model nobody can localise inside.
 Stages are numbered as in v1 where they correspond. **Stage 0 gains a spike; training and evaluation are
 promoted from stretch goal to real stages.**
 
-> **[REVIEW 2026-08-23] RC7 — This inventory is marked CONFLICT in the document's own register, and
-> carries no pointer to that fact.** §B.3 records DR-11 ("Stage inventory | CONFLICT | §5 against A.5;
-> R3") and R3 instructs "reconcile to one list" — yet §5 itself is silent, unlike §2, §3.1, D1, D6, D7a,
-> D11 and §6.1, which all received pointers in the same merge (§B.5 item 6). Under the header's precedence
-> rule the body is normative, so a builder planning from here has no signal that the register considers
-> this list contested. Keep this pointer until the reconciliation lands; DR-11 is one of the rows §B.3
-> says to close before writing models, which makes closing R3 the programme's first pre-flight item (see
-> RC8 at Stage 0).
+**Supersedes:** A.5 (Corrected stage list) as a *second inventory*. A.5's content is absorbed here and A.5
+is reduced to a provenance record. Also supersedes: §5 Stage 4's "every distinct threshold constant" AC,
+§5 Stage 9's EM acceptance criterion, and the Stage-decoupling mechanism as written in v2 — each named at
+the point it changed.
+
+> **[REVIEW 2026-08-23] Fixed (F13) — RC7, RC8, RC11, RC12, RC29 and R3 are closed by this revision.**
+> DR-11 was the register's only `CONFLICT`: §5 and A.5 were two normative inventories, and *"a reader
+> planning from §5 builds a different programme from one planning from A.5."* This section is now the
+> single inventory. The merge was executed from **RC29's enumeration**, not R3's own — RC29 records that
+> R3's delta list is materially incomplete, and it is the longer list. What moved:
+>
+> | From A.5 | Landed at |
+> |---|---|
+> | Stages 2b, 6b, 12b — absent from §5 entirely | New sections below |
+> | Sub-stages 0.6 (capacity) and 0.7 (comparator suite) | Stage 0 |
+> | 0.3's three extensions — both retain flags, ground-truth labels, training traces | Stage 0.3 |
+> | The critical path, and day-one parallelism | Stage 0.0 and Stage decoupling |
+> | ~12 per-stage extensions | Each stage's own section |
+> | The one *direct* textual conflict — Stage 4's threshold constants | Stage 4, resolved in A.5's favour |
+>
+> Two items that were in **neither** list also land here: **Stage 0.0 pre-flight** (RC8 — five "do this
+> first" directives coexisted and none ordered the others) and **Stage 0.9, the scaffold rebuild**, which
+> `DbtBestPractices.md` Appendix D records as deleted and which appeared in no task list in either
+> document.
+>
+> **Decided under delegated authority 2026-08-23.**
+> **Recommendation source:** R3 (*"reconcile to one list"*), scoped by RC29.
+> **Reversible:** reopen DR-11 in §B.3.
 
 ### Unit tests are a stage deliverable, not a follow-up (D12)
 
@@ -1093,13 +1119,13 @@ page. Each row is expected to grow when its model is actually written — that g
 | 2 | `stg_input` | D8 bare passthrough: mixed case, leading/trailing whitespace, an unparseable date, and NULL attributes all survive unchanged. Excludes `__splink_salt` (S1) |
 | 2 | `tf_all` | Non-null denominator (§3.5): a column with NULLs still sums to 1.0. D7a: a value absent from the frozen snapshot **raises**, and is not `COALESCE`d. Long-format grain, one row per `(column_name, value)` |
 | 3 | `int_candidate_pairs` | `match_key` is VARCHAR and is compared as VARCHAR (`blocking.py:203-206`). Overlapping rules dedupe to the S4 `min()`-on-VARCHAR result with ≥11 rules — the replicated bug gets its own named case. NULL and empty-string blocking keys. D3 pair ordering |
-| 4 | `int_comparison_vectors` | §3.3 gamma numbering: seeded at the non-null level count, descending, with the JSON list order and gamma order deliberately disagreeing in one case. One case either side of **every** distinct threshold constant (`>` vs `>=`). The null level. A comparison level that no fixture row reaches (M9) |
+| 4 | `int_comparison_vectors` | §3.3 gamma numbering: seeded at the non-null level count, descending, with the JSON list order and gamma order deliberately disagreeing in one case. One case either side of every **reachable** threshold constant (`>` vs `>=`), with unreachable ones documented instead. The null level, a null level that is not first, a level set with no `ELSE`, and one with no null level (M14). A comparison level that no fixture row reaches (M9) |
 | 5 | `int_scored_pairs` | `m=0`, `u=0`, level-not-observed, missing TF entry, and both ends of §3.1's clamp. Fixture m/u chosen so every Bayes factor is an exact power of two, per D12's exactness constraint. `bf_tf_adj_*` present only for the levels §3.2 says receive an adjustment |
-| 6 | `int_edges` | The threshold predicate is `>=` (§3.1 note / D2): one pair exactly *at* the threshold, one just below |
+| 6 | `edges_by_threshold` | The threshold predicate is `>=` (§3.1 note / D2): one pair exactly *at* the threshold, one just below. With the threshold as a dimension (M16), also: the same pair present at one threshold and absent at a higher one, and cross-threshold monotonicity |
 | 6 | `entity_clusters` | D4: singletons present; a chain, a star and a cycle each collapse to one min label; the ghost-node / NULL-endpoint case asserts we emit **nothing** where Splink emits a spurious NULL-id row; the monotone guard holds under a re-run |
 | 6 | metrics models (§3.6) | Each formula on a hand-built graph whose answer is arithmetic by hand — including the degenerate single-node and single-edge components |
 | 7 | `golden_records`, `cluster_membership` | D10: a tie broken by the trailing `unique_id`; a multi-column attribute surviving **as a unit** from one winning record; an all-NULL attribute; the `__source_record` / `__rule_applied` lineage columns |
-| 8 | incremental path | This is where dbt's `overrides` matter: one case with `macros: {is_incremental: false}` for the full-refresh shape and one with `true` plus an `input: this` fixture, whose expectation is the **inserted rows**, not the final table. Blocked on RC10 — under D11 there is currently no materialization for this stage to use |
+| 8 | full-rebuild path | v1 ships no incremental materialization, so there is no `is_incremental()` case to write: the 80/20 split rebuild is a data test, not a unit test. What *is* a unit test here is the row-stamp invariant — `er_model_sha` and `er_tf_snapshot_id` single-valued across the output (M8). The `overrides: {macros: {is_incremental: …}}` pair comes due with the v2 incremental path |
 | 9 | training models | D9 seeded u-estimation on a fixed sample; m-from-labels as one GROUP BY over hand-built labels; D5's EM for a **single** iteration against a hand-computed step, which is the part a unit test can pin without the oracle problem B5 describes |
 | 10 | `eval_*`, `diag_*` | A hand-built confusion matrix with one of each cell, including the empty-cell case; histogram bucket boundaries |
 
@@ -1109,54 +1135,147 @@ Stage 5 models need **generated** fixtures rather than hand-written ones, becaus
 from the model JSON (M2). That generator is Stage 1 work (RC57), and D12 names it as the one piece of
 machinery this rule costs.
 
+### The critical path, and what runs beside it
+
+Stated here rather than left to be inferred, because it is the largest schedule lever in the document.
+
+**The critical path is `1 → 3 → 4 → 5`.** Stage 1 leads because `load_model_json` owns five values the
+model JSON does not contain and that must be *recomputed* rather than read (D1). Every downstream baseline
+is meaningless until that reader is right.
+
+**Stages 6, 7, 10's measurement models and 12b build in parallel from day one**, from injected baselines,
+via the per-model injection mapping in *Stage decoupling* below. They are not gated on the critical path.
+
+Two things run **before** the work they support, and both orderings are counter-intuitive enough to be
+worth stating twice:
+
+- **0.7, the comparator sensitivity suite, is built before 0.4 freezes the baselines it guards.**
+  `DbtBestPractices.md` §12.7 is explicit that this is the one standard that must precede the thing it
+  checks. A comparator mutation-tested afterwards leaves earlier green results nobody can trust
+  retrospectively.
+- **Stage 10's *measurement* models are built immediately after Stage 2**, not at Stage 10, so their
+  outputs can gate Stage 3's recall floor and Stage 6's quality tests. A quality stage that runs after the
+  stages it should gate cannot gate them (M12).
+
 ### Stage 0 — Scaffolding, fixtures, oracle, and the clustering spike
 
+- **0.0 Pre-flight.** Sequence the competing "do this first" directives and close what blocks planning.
+  Five of them coexisted with nothing ordering them (RC8): this task list; §B.3's *"rows marked CONFLICT
+  or MISSING are the ones to close before writing models"*; `DbtBestPractices.md` §12.7's *"built before
+  the thing it guards"*; its Appendix E's *"the first [G3] is the one to take next"*; and rebuilding the
+  deleted engineering scaffold, which appeared in no list at all. **The order:**
+  1. Close **DR-11 / R3** — one stage list, so everything else has something to sequence off.
+  2. Decide **DR-17 / G3** (the model-JSON trust boundary — the one that is architecture), then
+     disposition the remaining `MISSING` rows. Per RC30 only DR-16 and DR-17 are missing in full.
+  3. Close **DR-16 / G2+G9** — the input contract. It gates every model reading `stg_input`.
+  4. Settle **`DbtBestPractices.md` B.1 / DR-13** (runtime substrate). Its own text says it must precede
+     the 0.3 harness, and RC45 warns it otherwise resolves itself by drift the moment Appendix C.3's
+     `profiles.yml` is rebuilt verbatim — so it is decided *before* 0.9 touches that file.
+  5. Rebuild the scaffold — **0.9**, below.
+  6. Build the comparator sensitivity suite — **0.7**, below.
+  7. Then 0.1–0.6 and 0.8.
+
+  **B.8** is decided out of band: its recommendation is *"(a), after testing (c)"*, so **0.8** runs first
+  and its result sets the value (RC46). **DR-09** and **DR-08 / B.2** close before Stage 6 is broken down,
+  because both change that stage's *contract* rather than its SQL.
 - 0.1 dbt-duckdb project; pin `splink`, `duckdb`, `dbt-core`, `dbt-duckdb` **and `sqlglot`** exactly;
   `make` targets. sqlglot is parity-critical — it, not Splink, decides which levels receive a TF
   adjustment (A.2 C2) — and it arrives transitively, so it is invisible to a pin list that names only the
-  four. See **G11**.
-- 0.2 Vendor `fake_1000`; seeded synthetic generator.
+  four. See **G11**. *Pin it explicitly and by exact version: `sqlglot`'s resolved upper bound comes from
+  `dbt-bouncer`, not from Splink (`splink 4.0.16` asks only for `>=17.6.0`; `dbt-bouncer 3.8.0` requires
+  `>=25,<31`), so a routine lint-tool bump can move a parity-critical dependency. `dbt-bouncer` therefore
+  joins the four exact pins on Dependabot's ignore list (`DbtBestPractices.md` §16).*
+- 0.2 Vendor `fake_1000`; seeded synthetic generator. Include the **degenerate-corpus fixture set** G9
+  asks for: empty corpus, single row, all-identical records, an all-NULL blocking column, a NULL
+  `unique_id`, and two records sharing a `unique_id`.
 - 0.3 `gen_baseline.py` dumping every intermediate as parquet with a manifest.
   **Normative: baselines are generated from a model JSON that has been saved and reloaded** (§3.4).
-- 0.4 Freeze `model_jsons/fake_1000_v1.json` + baselines.
+  The baseline format must carry, **from day one**, everything a later stage will need — retrofitting it
+  after 0.4 freezes it is the expensive path:
+  - `retain_matching_columns=True` **and** `retain_intermediate_calculation_columns=True`. Neither is
+    Splink's default. Without the first, Stage 4's baseline may contain no gamma columns at all, which
+    makes gamma equality the sole gate over a self-consistent wrong numbering (M14); without the second,
+    Stage 5 has no per-comparison `bf_*` to localise a divergence with.
+  - **Ground-truth labels** on every fixture, so Stage 10's measurement models have something to measure
+    (M12).
+  - **Per-iteration training traces**, so Stage 9 has the oracle B5 shows it cannot get from a procedure.
+  - A provenance manifest per baseline: Splink version, model-JSON sha, seed, DuckDB version, **sqlglot
+    version** (RC54), producing commit, and the **platform triple** G5 needs and RC21 records as still
+    missing.
+
+  **Blocked by `DbtBestPractices.md` B.1 / DR-13** — DuckDB's process-level lock means the harness and dbt
+  cannot both hold the database, and which way that resolves decides what this script writes and reads.
+- 0.4 Freeze `model_jsons/fake_1000_v1.json` + baselines. **Must follow 0.7.** Also: fix the frozen model
+  rather than freezing a bad one — it measures F1 = 0.72 and blocking recall = 0.51, and two extra
+  blocking rules take it to F1 = 0.98 (M12, §A.6 Q5).
 - 0.5 **Clustering spike — now resolved, retained as a regression gate.** The D4 formulation must
   reproduce a union-find partition on random, chain, and star graphs with recorded runtimes. This gate
   re-runs on every DuckDB bump.
+- **0.6 Materialisation & capacity spike.** Measure bytes-per-pair for the fixture model and publish
+  `er_max_pairs` from the measurement. ~~Decide `ephemeral` vs `table` per intermediate~~
+  **[SUPERSEDED by D11]** — but the *measurement* stands and D11's follow-through requires it, because
+  `er_max_pairs = 42,000,000` was derived from the wide 946 B/pair shape and under-provisions the narrow
+  one by roughly 10×. The check needs a home **in the DAG**, firing before Stage 3 materialises: a
+  `make` target reports, it does not stop a build (G14).
+- **0.7 Comparator sensitivity suite.** `DbtBestPractices.md` §12.7's mutant catalogue, applied to a
+  known-good output at every parity stage, with **no mutant permitted to survive** and each asserting the
+  **expected localisation string** rather than merely failing. Sized at one day and *"the cheapest
+  credibility available"* (M10). Nothing else in the programme proves the parity comparator can fail.
+- **0.8 `EXPLAIN ANALYZE` spike for B.8 option (c).** Does a DuckDB lateral column alias evaluate once, or
+  expand textually? D11 rec 4 requires single evaluation to be *structural*. Without this, B.8's option
+  (a) is adopted untested by default (RC46). Timebox and kill criterion written in advance.
+- **0.9 Rebuild the engineering scaffold** from `DbtBestPractices.md` Appendix C with its v2 delta tables
+  applied. Appendix D records that the verified original was deleted, so Appendix C is the only copy —
+  and only six of its seven blocks have text (C.5 `dbt-bouncer.yml` has none, RC50), while `pyproject.toml`,
+  `uv.lock`, the `Makefile` bodies, `.yamllint.yml`, `.gitignore`, the workflows beyond `ci.yml`, and eight
+  of ten enforcement scripts have no content anywhere in either document. This is the largest single item
+  in Stage 0 and it appeared in no task list until now. `DbtBestPractices.md` Appendix D's bootstrap-order
+  note (RC53) owns its sequencing.
+- **Frozen model library matrix.** The 11-cell matrix M13 specifies — every entry saved, reloaded, hashed
+  and committed — rather than the one sentence the plan carried.
 
-**AC:** `make baseline` is hash-stable across two runs; the D4 gate is green with published timings.
+**AC:** `make baseline` is hash-stable across two runs; the D4 gate is green with published timings; no
+mutant in §12.7's catalogue survives the comparator suite; `er_max_pairs` is derived from a measurement
+rather than carried forward as a literal; and the rebuilt scaffold re-earns or demotes every `[VERIFIED]`
+marker it claims (`DbtBestPractices.md` 3.44).
 
-> **[REVIEW 2026-08-23] RC8 — Five "do this first" directives coexist, and none orders the others.** They
-> are: this task list; §B.3's "rows marked CONFLICT or MISSING are the ones to close before writing
-> models"; `DbtBestPractices.md` §12.7's "built before the thing it guards" (the comparator suite, before
-> 0.3/0.4 freeze baselines against it); its Appendix E's "the first [G3] is the one to take next"; and one
-> that appears in no list at all — rebuilding the deleted engineering scaffold from `DbtBestPractices.md`
-> Appendix C (its Appendix D records the deletion). Since the body is normative and §5 is the programme's
-> ordering artifact, add a **Stage 0.0 — Pre-flight** here that sequences them. A workable order:
-> (1) close DR-11/R3 so there is one stage list to sequence from; (2) decide DR-17/G3 (the one that is
-> architecture) and disposition the remaining MISSING rows; (3) settle `DbtBestPractices.md` B.1, whose
-> own text says it must precede the 0.3 harness; (4) rebuild the scaffold from its Appendix C with the v2
-> delta tables applied; (5) build the comparator sensitivity suite (A.5 Stage 0.7); then 0.1–0.5. Until
-> this exists, which task a builder takes first depends on which document they opened last.
-
-### Stage 1 — Model JSON ingestion & SQL generation
+### Stage 1 — Model JSON ingestion & SQL generation · **critical path**
 
 `load_model_json` (D1) including the five recomputed fields; `blocking_sql` (D2); `comparison_vector_sql`
 (§3.3); `bayes_factor_sql` + `tf_adjustment_sql` (§3.1–3.2).
 
+**The compile-time sidecar** (§A.2) is part of this stage, not a later discovery. It is a generated,
+committed, hashed artefact that resolves what Jinja provably cannot: the `comparison_vector_value` per
+level, the resolved `m`/`u` after Splink's own defaulting, `tf_u_exact_match`, and the three configuration
+facts that are runtime observations rather than JSON contents — `er_backend_link_type`,
+`er_has_source_dataset`, `er_left_table`. TF exact-match-level resolution is a sqlglot CNF analysis that
+string-matching gets wrong in both directions (A.2 C2), so it is resolved once, at compile time, and never
+approximated.
+
+**Lints that belong here**, because each catches a Stage-1 fact at Stage 1 rather than at the stage that
+trips over it: asymmetric comparison levels (M1), `output_column_name` uniqueness *after* `.replace(" ",
+"_")` normalisation (M2), the `set()` ban (M15), and `m == 0` / `u == 0` as a **hard error** while absent
+m/u stays valid input (M13). `er_gamma_columns` and `er_bf_columns` are published as vars from the same
+pass (M2, and `DbtBestPractices.md` §9).
+
 **AC:** rendered SQL for the fixture model matches reviewed snapshots; malformed JSON fails compilation
 with actionable errors; **a level with `m_probability` absent renders `_default_m_values`, not NULL**;
-`dbt compile` output contains zero Jinja residue and reproduces `cast(… as float8)` wrappers.
+`dbt compile` output contains zero Jinja residue and reproduces `cast(… as float8)` wrappers; the sidecar
+regenerates **byte-identically** from the same model JSON; and *the wrapper emits `er_gamma_columns`,
+`er_bf_columns` and a `format: sql` fixture per JSON-derived model from one pass over the model JSON, with
+a drift-guard test that fails if any of the three disagrees with the rendered SQL* (RC57).
 
-> **[REVIEW 2026-08-23] RC57 — D12's one piece of new machinery lands in this stage and has no AC line
-> here.** `int_comparison_vectors` and `int_scored_pairs` cannot have hand-written unit-test fixtures —
-> their column set is data (M2) — so the wrapper that emits `er_gamma_columns` / `er_bf_columns` must also
-> emit their fixtures, and M2's drift-guard pytest must cover three artefacts against one model JSON rather
-> than two. That is Stage 1 work: it is the same wrapper, in the same file, deciding the same thing. Left
-> unstated it becomes a Stage 4 discovery, which is the exact failure M2's own scenario describes ("a
-> Stage-1 decision being made in Stage 4"), only now it blocks a gate (`DbtBestPractices.md` 3.20) rather
-> than a contract. Add an AC: *the wrapper emits `er_gamma_columns`, `er_bf_columns` and a `format: sql`
-> fixture per JSON-derived model from one pass over the model JSON, and the drift-guard test fails if any
-> of the three disagrees with the rendered SQL.*
+That last clause is D12's one piece of new machinery. `int_comparison_vectors` and `int_scored_pairs`
+cannot have hand-written fixtures — their column set is data (M2) — so the wrapper that emits the column
+lists must emit the fixtures too, and the drift guard covers three artefacts against one model JSON rather
+than two. Left to Stage 4 it becomes exactly the failure M2 describes, *"a Stage-1 decision being made in
+Stage 4"*, only now it blocks a gate (`DbtBestPractices.md` 3.20) rather than a contract.
+
+**Blocked by:** **DR-17** (the model JSON is untrusted SQL executed with the consumer's credentials — G3;
+this stage is where the trust boundary is enforced, and the sidecar is its natural enforcement point);
+**DR-16** (the input contract — G2, G9); and **`DbtBestPractices.md` B.8**, because the snapshot AC above
+reviews rendered scoring SQL containing D11 rec 4's subquery, which §11.1's `forbid_subquery_in = both`
+forbids (RC46).
 
 ### Stage 2 — Staging & term frequency
 
@@ -1179,36 +1298,84 @@ join key.
   `match_weight` after unrelated records are appended to the corpus. This is the test that makes frozen
   TF meaningful rather than decorative, and it is cheap to write now and awkward to retrofit.
 
-### Stage 3 — Blocking
+**Blocked by DR-16** — every model here reads `stg_input`, and the input contract is what says what
+`stg_input` is allowed to be handed.
 
-**AC:** exact `(unique_id_l, unique_id_r, match_key)` set equality, with `match_key` compared as VARCHAR;
-per-rule pair counts; adversarial fixtures for overlapping rules, NULL-heavy keys, and **empty-string
-keys** (D2).
+### Stage 2b — Record lifecycle
 
-### Stage 4 — Comparison vectors
+**Either build it, or declare it an explicit non-goal. Leaving it ambiguous is what is not acceptable.**
 
-**AC:** 100% gamma equality; a boundary fixture for **every distinct threshold constant** in the model
-JSON (catches `>` vs `>=`); a fixture where the JSON list order and gamma order disagree (catches §3.3).
+If `is_incremental()` ships in Stage 8, this stage must exist: `is_deleted` / `valid_to` on `stg_input`, an
+`edges ⊆ nodes` referential-integrity test, and an explicit reap step. dbt's `delete+insert` cannot remove
+a key the `SELECT` excludes — the incumbent hit this exact trap and needed a post-hook.
 
-### Stage 5 — Scoring
+The cheap correct v1 choice is to declare every model `table` (full rebuild) and put `is_incremental()` out
+of scope, which makes deletion a non-issue by construction. **D11 has since decided all-`table`**, which is
+that choice in all but name — yet Stage 8 still ships the incremental path. That triangle is resolved in
+Stage 8's own section, not here, because resolving it in two places is how it stayed open (RC10, RC15).
 
-**AC:** parity per §6; per-comparison `bf_<name>` and `bf_tf_adj_<name>` emitted for localisation (needs
-`retain_intermediate_calculation_columns=True` in the baseline, which is **not** Splink's default);
-fixtures covering `m=0`, `u=0`, not-observed levels, missing TF entries, and the clamp region.
+### Stage 3 — Blocking · **critical path** · highest-risk parity stage
 
-### Stage 6 — Clustering
+**AC:**
+- Exact `(unique_id_l, unique_id_r, match_key)` set equality, with `match_key` compared as VARCHAR.
+- Per-rule pair counts.
+- Adversarial fixtures for overlapping rules, NULL-heavy keys, and **empty-string keys** (D2).
+- **Blocking recall against ground truth, with `er_blocking_recall_floor` as a two-sided guardrail**
+  (M12). Recall lost here is unrecoverable downstream and was otherwise ungated: the frozen fixture model
+  finds 1,651 of 2,975 true pairs. A floor that is too *high* is also a failure — it means the fixture, not
+  the code, changed.
+- The `max_rows_limit = 1e9` ported from Splink is replaced by the **byte-derived budget** from 0.6.
+  Splink's limit is per-rule; at the measured wide shape it would admit a 946 GB build (B1).
 
-`int_edges` (threshold, **`>=`** — §3.1 note / D2); `entity_clusters` (D4); `entity_clusters_1to1`
-(`cluster_using_single_best_links`); `node_metrics` / `cluster_metrics` / `edge_metrics` (§3.6).
+**Restricted to the supported-configuration matrix** (Stage 12.1), which makes every hard case in D3 and S2
+dead code for the actual migration target and materially de-risks this stage.
 
-> **[REVIEW 2026-08-23] RC9 — `entity_clusters_1to1` is dead code under Stage 12.1's v1 matrix.** The
-> matrix fails compilation on anything but `dedupe_only` with no `source_dataset`, and
-> `cluster_using_single_best_links` is defined *over* source datasets (M11's evidence: per-cluster
-> `contains_<sd>` flags, `not ((l.contains_A and r.contains_A) or …)`) — with no `source_dataset` column
-> there is nothing for the one-per-dataset constraint to range over. G18 catalogues exactly this class of
-> un-remarked dead code, but its list (D3, S2, M1, A.2 C4, Open Question 3) omits this model, and M11's AC
-> and A.5's Stage 6 row keep it in the v1 plan unmarked. Tag it v2 alongside the other deferred link-shape
-> work, or state why it survives the matrix.
+**Reusable oracle — do not rebuild it.** The incumbent's `tests/helpers/pairs.py::splink_blocked_pairs`
+is a working Splink blocking oracle via `deterministic_link()` (A.3 Group 3).
+
+### Stage 4 — Comparison vectors · **critical path**
+
+**AC:** 100% gamma equality; a boundary fixture either side of every **reachable** threshold constant in
+the model JSON (catches `>` vs `>=`), with the unreachable constants **documented** rather than fixtured;
+a fixture where the JSON list order and gamma order disagree (catches §3.3); and fixtures for
+null-level-not-first, no-`ELSE`-level, and no-null-level (M14).
+
+**Supersedes:** this AC previously read *"a boundary fixture for **every distinct** threshold constant"*.
+That was the one *direct* textual conflict between §5 and A.5 rather than an omission (RC29), and it is
+resolved in A.5's favour: a constant no fixture row can reach cannot have a boundary fixture, so demanding
+one makes the AC unsatisfiable rather than strict. Documenting the unreachable ones keeps the information
+the strict form was reaching for.
+
+### Stage 5 — Scoring · **critical path**
+
+**AC:** parity per **A.4** (not §6.1 — see §6.1's own note); per-comparison `bf_<name>` and
+`bf_tf_adj_<name>` emitted for localisation (needs `retain_intermediate_calculation_columns=True` in the
+baseline, which is **not** Splink's default); fixtures covering `m=0`, `u=0`, not-observed levels, missing
+TF entries, and the clamp region; and the clamped Bayes-factor product computed **once**, as a structural
+single-evaluation `_bf_clamped` column rather than a repeated expression (D11 rec 4, B1 rec 2).
+
+**Blocked by `DbtBestPractices.md` B.8.** Its §11.1 concedes that until B.8 closes, `er_int_scored_pairs`
+cannot be written to satisfy §7.3's CTE ban, `forbid_subquery_in = both`, and float parity's rejection of a
+repeated expression all at once. One of the three must give.
+
+### Stage 6 — Clustering · parallelisable from day one
+
+`edges_by_threshold` (threshold, **`>=`** — §3.1 note / D2); `entity_clusters` (D4);
+`node_metrics` / `cluster_metrics` / `edge_metrics` (§3.6).
+
+**On the two model names.** `int_edges` becomes `edges_by_threshold` and `entity_clusters` takes the
+composite key `(thr, unique_id, entity_id)`, because the acceptance criteria below require three thresholds
+**simultaneously** and `var('er_threshold')` builds one partition per run. Cross-threshold monotonicity is
+not expressible as a dbt test under the var approach at all (M16). This changes these models' *contract*,
+not merely their SQL — which is why **DR-08 / `DbtBestPractices.md` B.2 closes before this stage is broken
+down**, and why it cannot be deferred as an implementation detail.
+
+**`entity_clusters_1to1` is deferred to v2** (closes RC9). `cluster_using_single_best_links` is defined
+*over* source datasets — per-cluster `contains_<sd>` flags, `not ((l.contains_A and r.contains_A) or …)` —
+and Stage 12.1's supported-configuration matrix forbids `source_dataset`, so there is nothing for the
+one-per-dataset constraint to range over. It is dead code for the actual migration target. It is tagged
+alongside the other deferred link-shape work (D3's composite ordering, S2, M1, A.2 C4) rather than left
+unmarked in the v1 plan; **G18's dead-code catalogue gains this row**, which it previously omitted.
 
 **AC:**
 - **Label** parity (not merely partition parity) at thresholds {0.5, 0.9, 0.99} — D4 shows the labels are
@@ -1221,12 +1388,45 @@ fixtures covering `m=0`, `u=0`, not-observed levels, missing TF entries, and the
   diameter is as expensive as the clustering itself, and every cheap proxy is anti-correlated with cost
   by ~200× (Appendix A, M5). Use an in-query iteration cap plus a post-hoc alert instead.
 - Runtime recorded **against Splink's own time on the same graph**. Per D4a we expect to be slower; the
-  criterion is that the ratio is known and does not regress, not that we win.
+  criterion is that the ratio is known and does not regress, not that we win. **An absolute budget runs
+  alongside the ratio** — `≤ var('er_cluster_budget_s')` — because a ratio-only criterion cannot fire on
+  the deep-component case at all (M11).
+- **Per-model acceptance criteria for the metrics models**, with a **Python union-find oracle** for
+  `is_bridge`: a bridge is an edge whose removal increases the component count. There is no SQL oracle —
+  Splink computes it in igraph, in Python, and degrades silently to nothing when igraph is missing (S3),
+  so our version is a *replacement* and needs an oracle of its own (M11).
+- **Max-cluster-size gates** (M12). Cluster precision amplifies edge error: 0.9764 at the edge level
+  became 0.7495 at the cluster level on the fixture, a 14.8× amplification of false positives.
 
-### Stage 7 — Survivorship & golden records
+**Blocked by DR-09 / G15** — whether there is one threshold or a gray band decides whether gray-band pairs
+enter the graph at all, which changes every acceptance criterion above. And by **DR-08 / B.2**, above.
+
+### Stage 6b — Entity identity
+
+**Either build it, or rename the column. Choosing "rename" is legitimate and cheap; leaving it ambiguous
+is not.**
+
+- **Build:** `entity_keys` + `cluster_lineage` + `entity_events`, adopting the incumbent's `INV-PERM`.
+- **Rename:** `entity_id` becomes `component_label`, and it is removed as a key from every downstream
+  model.
+
+`entity_id` is currently emitted as an identifier while §1.3 disclaims identity, and adding a single record
+relabelled 5 of 5 pre-existing records (M6). **DR-12 decides which**, and its stated trigger has already
+fired: it says *"decide with DR-14"*, and DR-14 has been CURRENT since 2026-08-20, with §A.6 Q1 already
+declaring its consequences *"binding, not conditional"* — including this rename — while the body still
+emits `entity_id` throughout D4, D10's `PARTITION BY`, §2 and Stage 6 (RC16).
+
+### Stage 7 — Survivorship & golden records · parallelisable from day one
 
 Per D10, including the multi-column-attribute rule. No Splink oracle; hand-built fixtures, property tests,
 and a row-order permutation test.
+
+**Extended per M19**, whose complaint is that survivorship as specified is single-strategy-per-attribute,
+drops multi-valued attributes, and has nowhere to put a conflict it cannot resolve: ordered **rule chains**,
+**field groups**, **multi-valued output**, an explicit **unmergeable-conflict path** and the relation it
+writes to, **config validators**, and a **per-field-group property test**.
+
+`golden_records` and `cluster_membership` also need a declared grain, which they do not yet have (G10).
 
 ### Stage 8 — Incremental
 
@@ -1239,46 +1439,79 @@ did.** `where a.is_new or b.is_new` still evaluates every blocking rule over the
 it costs ≥ 100% of a full rebuild (Appendix A, B4). Incremental cost has to come from restricting the
 *blocked* side, not from a predicate applied after blocking. See B4 for the corrected design.
 
-**AC:** 80/20 split equivalence when no merges occur; merges flagged, never silently mis-clustered;
-frozen-TF approximation documented and bounded.
+**In v1 this stage is a full-rebuild flow. `is_incremental()` moves to v2, together with Stage 2b.**
 
-> **[REVIEW 2026-08-23] RC10 — Stage 8 and D11 contradict each other, and neither mentions the other.**
-> D11 decides "every stage model is `materialized='table'`" and its follow-through drops `ephemeral` from
-> `er_allowed_materializations`, never carving out `incremental` — yet this stage ships the incremental
-> path M8 specifies (M8: "the incremental `unique_key` includes both so a re-score appends rather than
-> colliding"), which requires a materialization D11's contract does not admit. A.5's Stage 2b row named
-> this exact state "not acceptable": Stage 8 shipping `is_incremental()` with neither the record-lifecycle
-> machinery (`is_deleted`/`valid_to`, an `edges ⊆ nodes` test, a reap step) nor the explicit non-goal.
-> Either D11 carves out `incremental` for Stage 8 — and 2b's lifecycle requirements come due — or Stage 8
-> is restated as a full-rebuild flow under D11 (the "cheap correct v1 choice") and its incremental framing
-> moves to v2 with the rest of the deferred work.
+**Supersedes:** M8's incremental `unique_key` guidance *for v1*; A.5's Stage 8 row insofar as it schedules
+incremental delivery in v1. Both stand as the v2 design. Closes RC10 and settles Stage 2b's either/or.
+
+Three facts decide it, and they all point the same way:
+
+1. **D11 decided `table` everywhere** and dropped `ephemeral` from `er_allowed_materializations` without
+   carving out `incremental`. Shipping `is_incremental()` under that contract requires a materialization
+   the contract does not admit.
+2. **The specified incremental design is not incremental.** `where a.is_new or b.is_new` still evaluates
+   every blocking rule over the whole corpus: measured at **139% of a full rebuild** on 1M/10k, and 5.4×
+   the batch-driven form for identical output (B4). Carving out a materialization to run something slower
+   than the thing it replaces is not a trade worth making.
+3. **A.5's Stage 2b names this exact resolution** *"the cheap correct v1 choice"*: declare every model
+   `table`, put `is_incremental()` out of scope, and deletion becomes a non-issue by construction. What it
+   called unacceptable was shipping `is_incremental()` with **neither** the lifecycle machinery nor the
+   explicit non-goal. This is the explicit non-goal.
+
+The cost, stated rather than discovered: every run re-scores the whole corpus. That is less of a change
+than it sounds, because D7a already makes a TF-snapshot refresh a full rescore (G7), and DR-14 puts run
+scheduling on the platform side of the boundary.
+
+**v1 AC:** a full rebuild over the 80/20 fixture split produces the same edges and the same partition as a
+single build over the whole corpus; `er_model_sha` and `er_tf_snapshot_id` appear on every row with
+`count(distinct …) = 1` tests, so a run cannot silently mix scores from two model JSONs or two TF
+snapshots (M8); the frozen-TF approximation is documented and bounded.
+
+**v2 design, recorded so B4's measurement is not lost:** two explicitly-driven joins —
+`(batch ⋈ corpus) UNION ALL (batch ⋈ batch)` — never the disjunctive predicate, with a **measured**
+acceptance criterion that the incremental blocking model's wall time is **< 10% of the full model's** on
+the 1M fixture. Optional `er_assertions` / `er_cut_edges` inputs upstream of the edges model (M20), and
+Stage 2b's `is_deleted` / `valid_to`, `edges ⊆ nodes` test and reap step come due at the same time.
 
 ### Stage 9 — Training *(promoted from stretch goal)*
 
 9.1 `train_prior`; 9.2 `train_u` (D9, seeded and reproducible); 9.3 `train_m_from_labels` (one GROUP BY);
 9.4 `train_em` (D5) including per-session column removal, blocking-adjusted λ, and **median** combination.
 
-**AC:** u-estimation **exact** given the same seed; m-from-labels exact; EM within 1e-4 of Splink's on the
-same blocking pass with the same iteration count.
+**The EM oracle is a committed artefact, not a procedure.** D5's `train_em` is a **spike** with a timebox
+and a written kill criterion, not a delivery task.
 
-> **[REVIEW 2026-08-23] RC11 — This AC restates verbatim the criterion B5 proves unfalsifiable.** The
-> training oracle is not a function of (data, seed) — B5 measured max |Δ match-weight| = 1.63 under
-> Splink's default `seed=None` — the iteration count is unobservable, and 1e-4 equals Splink's own
-> `em_convergence`, so a sub-tolerance parameter difference can move the early stop by one iteration and
-> produce a supra-tolerance difference in every parameter. A.5's Stage 9 row replaces this AC ("Change the
-> oracle. Compare per-iteration trajectories against a committed training trace; require `seed`; assert
-> cap-vs-converge explicitly") — but under the v2 precedence rule the body wins where it speaks, and this
-> line speaks, so the unachievable AC is currently the normative one. Rewrite the AC to the trace oracle
-> here, or mark this line with a pointer to B5/A.5 the way B1 rec 1 and Thesis 2 were marked in the other
-> direction.
+**AC:** u-estimation **exact** given the same seed; m-from-labels exact; and for EM, the **per-iteration
+trajectory** matches a committed training trace, with `seed` **required** and cap-versus-converge asserted
+explicitly.
 
-### Stage 10 — Evaluation & diagnostics *(new)*
+**Supersedes:** the previous AC, *"EM within 1e-4 of Splink's on the same blocking pass with the same
+iteration count"*, which B5 proves unfalsifiable on three independent counts (RC11): the training oracle is
+not a function of (data, seed) — measured max |Δ match-weight| = **1.63** across 16,553 pairs under
+Splink's default `seed=None`; the iteration count is **unobservable**, because *"EM converged after 25
+iterations"* prints unconditionally outside the break; and 1e-4 **is** Splink's own `em_convergence`, so a
+sub-tolerance parameter difference moves the early stop by one iteration and produces a supra-tolerance
+difference in every parameter. The trace must be captured back in **Stage 0.3** — retrofitting it after 0.4
+freezes the baseline format is the expensive path.
+
+### Stage 10 — Evaluation & diagnostics *(new)* · split, and it gates
 
 `eval_accuracy`, `eval_errors`, `eval_unlinkables`, `diag_comparison_vector_distribution`,
 `diag_match_weights_histogram`.
 
+**The measurement models build immediately after Stage 2**, not here. They need only labels and scores, and
+building them early is what lets their outputs gate **Stage 3's blocking-recall floor** and **Stage 6's
+quality tests**. A quality stage that runs after the stages it should gate cannot gate them (M12). Only the
+*parity* acceptance criterion stays at this position in the sequence.
+
 **AC:** confusion-matrix parity against `accuracy_analysis_from_labels_table` on a labelled fixture. This
 is the first stage that measures whether the *output is good*, not merely whether it matches Splink.
+
+**The quality floor is a committed number, not a report.** The frozen fixture model measures F1 = 0.7138
+and blocking recall = 0.5550 at t = 0.9; adding `block_on(dob)` lifts recall to 0.8061 and `block_on(email)`
+to 0.9173, ending at F1 = 0.9809. Parity gates cannot see the difference between 0.72 and 0.98. Per-fixture
+F1 and recall floors are therefore committed and enforced, not merely measured — otherwise this stage
+reports and the product ships at 0.72 (§A.6 Q5, M12).
 
 ### Stage 11 — The differential loop
 
@@ -1288,6 +1521,17 @@ Nightly randomized seeds → both engines → compare every stage → scoreboard
 **Change from v1:** vary **data** against a *frozen library* of model JSONs. v1 trained a new Splink model
 per seed, which makes a failure un-attributable between the model, the data, and our SQL. Model-varying
 runs are a separate, explicitly-labelled job.
+
+**Extended per M4 and M18:**
+- The **both-modes CI rule** — every model is exercised on `ref()` *and* on an injected baseline, because
+  injected mode alone is not a release gate.
+- The **per-model injection mapping** and the `sha256(model JSON)` binding that ties a baseline to the
+  model it was generated from. See *Stage decoupling*.
+- A **failure-bundle schema**, and a CI job that **reproduces the verdict from the bundle alone**. A
+  nightly failure that cannot be reproduced from its artefact is a finding nobody can act on.
+- §8's DoD item 3 splits into **parallel correctness** (many seeded runs at once) and **concurrent
+  stability** (consecutive calendar days). Ten serial green nights is an uncompressible ≥10-day tail —
+  ≈13.4 nights at p = 0.95 — and only the second half of the split actually needs the calendar.
 
 ### Stage 12 — Cutover *(new; resolves Appendix A, B3)*
 
@@ -1313,31 +1557,42 @@ dbt-er as a drop-in matching engine, delivery is a **swap** — the highest-risk
 **AC:** a shadow run completes on production-scale data; the go/no-go metrics are published; the rollback
 path has been executed in anger at least once in a non-production environment.
 
+### Stage 12b — Provenance & observability · parallelisable from day one
+
+`er_run_id` stamped on every materialised model and listed in `er_volatile_columns` so it is excluded from
+every content hash; `_er_run_manifest` written via `on-run-end`; a per-run performance artefact; and named
+owners for `docs/divergence-log.md` and `PARITY.md`, with a CI check that every deliberate divergence has
+**both** a log entry and a pinning test, checked in both directions.
+
+This stage exists because three of the document's own requirements — §6.2, §6.4's performance criteria, §7
+Q1, and DoD items 4–5 — otherwise belong to no stage at all (M7).
+
 ### Stage decoupling (replaces v1's strict serial gating)
 
 v1's principle 2 — "no stage starts until the prior stage's parity gate is green" — serialises the whole
-project and makes Stage 6/7 hostage to Stage 3/4/5. Instead, **every model can source its input from
-either its upstream model or an injected Splink baseline**, selected by a var:
+project and makes Stage 6/7 hostage to Stage 3/4/5. Instead, **every model can source its input from either
+its upstream model or an injected Splink baseline**. This gives per-stage isolation *and* end-to-end parity,
+localises failures, and is what lets **Stages 6, 7, 10's measurement models and 12b be built from day one**
+rather than waiting on the critical path. That parallelism is the largest schedule lever in the document.
 
-```sql
-{% if var('er_inject_baseline', false) %}{{ source('baseline','comparison_vectors') }}
-{% else %}{{ ref('int_comparison_vectors') }}{% endif %}
-```
+**Supersedes:** the single-global-boolean form this section carried in v2 —
+`var('er_inject_baseline', false)` selecting `source('baseline', …)` against `ref(…)` — which M4 shows is
+defective in four verified ways (closes RC12). The corrected mechanism has four parts:
 
-This gives per-stage isolation *and* end-to-end parity, localises failures, and lets stages be built in
-parallel.
+1. **Injection is per model, not global.** A single boolean flips *every* model at once, which A.5 calls
+   *"the one configuration that tests nothing"*: it never exercises the seam between a real upstream and an
+   injected one. The selector is a **mapping** — model name to source — so exactly one boundary is injected
+   at a time.
+2. **The baseline source is owned by the harness, not the package.** `source('baseline', …)` declared
+   inside `dbt_er` forces its database and schema onto every consumer and trips
+   `source-override-deprecation` on dbt-core 1.12.2. Package models never declare it.
+3. **Injected mode is not a release gate.** CI runs **both modes**, and green in injected mode alone does
+   not ship. This is stated here because it is the assumption that quietly stops being true.
+4. **A baseline is bound to the model JSON that produced it** by `sha256`. An injected baseline from a
+   different model JSON is a silent wrong answer, not a failure — the numbers are all plausible.
 
-> **[REVIEW 2026-08-23] RC12 — This six-line mechanism is the exact text M4 attacks, unamended and
-> unpointered.** None of M4's four verified defects is reflected here: `er_inject_baseline` is a single
-> global boolean (flipping it injects at *every* model at once — "the one configuration that tests
-> nothing"); `source('baseline', …)` inside the package forces its database/schema on every consumer and
-> trips `source-override-deprecation` in dbt 1.12.2; nothing states that injected mode is insufficient as
-> a release gate; and nothing binds the injected baseline to the active model JSON. Under the v2
-> precedence rule the body wins where it speaks, so the defective form is currently normative while M4's
-> corrected form (per-model injection mapping, harness-owned source, both-modes CI rule, sha256(model
-> JSON) binding) is merely evidence. Absorb M4's recommendation here or add an explicit pointer. This
-> paragraph is also where A.5's schedule consequence belongs — "Stages 6, 7, 10 and 12b build in parallel
-> from injected baselines starting on day one" — currently stated only in the appendix.
+**Every ticket states which mode it builds in.** A ticket that depends on injection also depends on this
+mechanism existing, which is Stage 11 work.
 
 ---
 
@@ -1501,31 +1756,34 @@ syntax (`test_type:unit`), fixture formats and the reason every fixture is `form
 
 ## 8. Definition of Done
 
-1. Stage 0–11 acceptance criteria green in CI.
-2. `dbt build --vars "{er_model: …, er_threshold: 0.9}"` on a fresh clone produces golden records
+1. Stage 0–11 acceptance criteria green in CI. **Stage 12 is deliberately outside this item**: its AC is a
+   production-scale shadow run and a rehearsed rollback, neither of which is CI-checkable. The package is
+   done before the migration is, and Stage 12's own AC governs the migration (closes RC14's first half).
+2. `dbt build` on a fresh clone, with the model JSON in **`DBT_ER_MODEL_JSON`**, produces golden records
    end-to-end with **zero Python in the dbt run**. Note the narrowing: the *run* is Python-free because
    the JSON carries rendered SQL (§1.2), but two of Splink's resolutions — TF exact-match-level detection
    (sqlglot CNF) and backend `link_type` selection (a runtime table count) — are not arithmetic and
    cannot be done in Jinja. They belong to a **compile-time sidecar** that pre-resolves the model JSON
    once (Appendix A, §A.2). "Zero Python anywhere" is not achievable in any design and is not claimed.
-3. Ten green nightly differential runs.
+3. **Correctness and stability, split** (M18): a parallel seeded-run sweep for correctness, **and** ten
+   consecutive green nightly differential runs for concurrent stability. Only the second half needs the
+   calendar. The serial form alone is an uncompressible ≥10-day tail — ≈13.4 nights at p = 0.95 — and a
+   failure in it is not reproducible without Stage 11's failure-bundle schema (closes RC14's second half).
 4. A divergence log documenting every Splink subtlety found, each pinned by a test — including the
    deliberately-replicated `min(match_key)` VARCHAR bug (S4).
-5. `PARITY.md` stating, with evidence links, exactly what is identical and what is bounded — using the
-   §6.1 policy, not v1's inconsistent pair of tolerances.
+5. `PARITY.md` stating, with evidence links, exactly what is identical and what is bounded — using
+   **A.4's** policy, not §6.1's strict subset and not v1's inconsistent pair of tolerances.
 6. **Every model has unit tests, and every model's unit tests were written with the model** (D12).
    Mechanised by `DbtBestPractices.md` 3.20, so item 1 already fails without it; stated here because the
    second half — *written with the model, not retrofitted* — is the part no gate can see, and a batch of
    unit tests added at the end to turn a coverage gate green is the failure mode this item names.
 
-> **[REVIEW 2026-08-23] RC14 — The DoD excludes the stage this revision added.** Item 1's "Stage 0–11"
-> omits Stage 12, which §5 added in this same revision to resolve blocker B3 and calls the highest-risk
-> operation in the programme. Either extend to 0–12, or state here why cutover sits outside "done" (a
-> defensible reading: Stage 12's AC — a production-scale shadow run and a rehearsed rollback — is not
-> CI-checkable, so "the package is done before the migration is"); silence reads as staleness, not
-> scoping. Item 3 also keeps the serial ten-nightly calendar gate M18 recommends splitting into parallel
-> correctness plus concurrent stability; if the old form is being kept deliberately, record the rejection
-> in A.8's style rather than leaving the appendix recommendation unanswered.
+> **[REVIEW 2026-08-23] Fixed (F14) — RC14 is closed by items 1 and 3 above.** Stage 12's exclusion is now
+> stated with its reason rather than left as apparent staleness, and item 3 adopts M18's split. Item 2 also
+> changed: it read `dbt build --vars "{er_model: …}"`, which **D1 supersedes** — `--vars` fails at
+> `MAX_ARG_STRLEN` (128 KiB, ≈330 levels) and is unreachable from `schema.yml`, so the model JSON arrives
+> through `env_var('DBT_ER_MODEL_JSON')`. A definition of done stated as a command nobody can run is not
+> checkable.
 
 ---
 
@@ -2084,7 +2342,18 @@ Add the standing note: *exact bit equality is the right default because both eng
 
 ---
 
-## A.5 Corrected stage list
+## A.5 Corrected stage list — **absorbed into §5 on 2026-08-23; retained as evidence**
+
+> **This table is no longer an inventory.** Every row below has been merged into **§5**, which is now the
+> single stage list, and §5 is normative. DR-11 is closed and R3 is discharged. The table is kept because
+> §B.5 point 1 makes absence claims verifiable by grep and because the *reasoning* in the "Why" column is
+> the evidence §5's decisions rest on — deleting it would remove the justification along with the
+> duplication. **If this table and §5 ever disagree, §5 is right and this one is stale.**
+>
+> Two rows resolved differently from how they are worded here, and both are recorded at the point of
+> change in §5: **Stage 2b's** either/or is closed as the explicit non-goal, with `is_incremental()` and
+> the record-lifecycle machinery moving to v2 together (see §5 Stage 8); and **Stage 4's** relaxation to
+> reachable threshold constants — the one *direct* textual conflict rather than an omission — is adopted.
 
 **Principle:** two of v2's stages are in the wrong position (evaluation must gate stages it currently follows), one is missing entirely (cutover), and the critical path is not stated.
 
@@ -2107,16 +2376,17 @@ Add the standing note: *exact bit equality is the right default because both eng
 | **12** — **Cutover** | **New.** Shadow run against the incumbent on production data; numeric go/no-go on edge-set symmetric difference and partition delta; documented rollback switch and its trigger. | B3. Without it, delivery is an unrehearsed swap. |
 | **12b** — **Provenance & observability** | **New.** `er_run_id` stamped everywhere; `_er_run_manifest` via `on-run-end`; per-run perf artefact; named owners for `divergence-log.md` and `PARITY.md` with a CI check that every deliberate divergence has a log entry and a pinning test. | M7. Three of the document's own requirements (§6.2, §6.4 Performance, §7 Q1, DoD 4–5) currently belong to no stage. |
 
-**Critical path:** `1 → 3 → 4 → 5`. With M4's per-model injection in place, **Stages 6, 7, 10 and 12b build in parallel from injected baselines starting on day one.** Say this in §5; it is the largest schedule lever in the document.
+**Critical path:** `1 → 3 → 4 → 5`. With M4's per-model injection in place, **Stages 6, 7, 10 and 12b build in parallel from injected baselines starting on day one.** ~~Say this in §5~~ — **said in §5, 2026-08-23**, under *The critical path, and what runs beside it*.
 
 > **[REVIEW 2026-08-23] RC15 — Two notes on this table.** **(Fixed, F5):** the Stage 0 cell previously
 > read "(**decided by D11; see §B.1 G1**)" while G1 rec 2, DR-01 and §B.5 all claim the literal
 > `[SUPERSEDED by D11]` marker was placed here — and §B.5 point 1 makes grep-ability the verification
 > lifecycle, so the mismatched token made the claim un-greppable at one of its three sites. Normalised to
-> the literal marker. **Stage 2b:** this row's either/or has been half-triggered and never closed — D11
-> has since decided all-`table` (this row's "cheap correct v1 choice" in all but name), yet body Stage 8
-> still ships the incremental path M8 specifies, and neither section mentions the other. That is the state
-> this row calls "not acceptable". See the review note at body Stage 8.
+> the literal marker. **Stage 2b (Fixed, F15):** this row's either/or was half-triggered and never closed.
+> It is now closed as the **explicit non-goal** — every model is `table`, `is_incremental()` is out of
+> scope for v1, and the record-lifecycle machinery moves to v2 alongside it. §5 Stage 8 carries the
+> decision and its three grounds; the corrected incremental design (two explicitly-driven joins, the
+> measured `< 10%` AC) is recorded there as the v2 target so B4's measurement is not lost.
 
 ---
 
@@ -3068,7 +3338,16 @@ one table with one home**; until then §6.1 now says A.4 is the one to implement
 > three-item enumeration above misses: §6.1's clusters row says partition equality where A.4 and Stage 6's
 > AC mandate label equality as primary (see the review note at §6.1).
 
-### R3 — Stage list: §5 and A.5 are two normative inventories
+### R3 — Stage list: §5 and A.5 are two normative inventories · **CLOSED 2026-08-23**
+
+> **Closed by the §5 revision of 2026-08-23**, executed from RC29's enumeration below rather than from this
+> finding's own shorter list. §5 is now the single inventory; A.5 is retained as evidence and marked stale
+> on conflict. DR-11 moves from `CONFLICT` to `CURRENT`. With R1, R2 and R4 already closed, **Appendix B.2
+> carries no open reconciliation item.**
+>
+> Two consequences this finding names are now real and are worth following through separately: **G6's model
+> inventory** and **G21's register** both key off the stage list, and the register is done — G6's §2.1
+> model inventory is not, and is the remaining half of that finding.
 
 §5 absorbed Stage 12 from B3 but not A.5's other structural changes: Stage **2b** (record lifecycle),
 **6b** (entity identity), **12b** (provenance & observability), and the instruction to **move evaluation
@@ -3077,7 +3356,9 @@ where it is. A reader planning from §5 builds a different programme from one pl
 **Reconcile to one list**; G6's inventory and G21's register both key off it.
 
 > **[REVIEW 2026-08-23] RC29 — This delta list is materially incomplete, which matters because R3's closure
-> will be executed from it.** Besides 2b, 6b, 12b and the evaluation move, §5 also lacks: A.5's **0.7**
+> will be executed from it.** **Executed 2026-08-23: every item enumerated below landed in §5**, and this
+> note — not R3's shorter list — was the scope used, which is why it is retained rather than struck.
+> Besides 2b, 6b, 12b and the evaluation move, §5 also lacks: A.5's **0.7**
 > (the comparator sensitivity suite — the one item `DbtBestPractices.md` §12.7 says must be built *before*
 > 0.4 freezes baselines against it); the live half of **0.6** (measure B/pair and publish `er_max_pairs` —
 > the decide-clause is superseded by D11, but the measurement is exactly what D11's follow-through table
@@ -3122,7 +3403,7 @@ force), **SUPERSEDED** (with the pointer), **OPEN** (needs an answer), **CONFLIC
 | DR-08 | Threshold as var or dimension | OPEN | — | M16; `DbtBestPractices.md` Appendix B.2 recommends the dimension |
 | DR-09 | One threshold or a gray band | **OPEN — blocks Stage 6** | — | M12 rec 5, A.3 Group 1; **G15** |
 | DR-10 | Tolerance policy | CURRENT, split across two tables | A.4's table | **R2** |
-| DR-11 | Stage inventory | **CONFLICT** | — | §5 against A.5; **R3** |
+| DR-11 | Stage inventory | **CURRENT (2026-08-23)** | **§5 is the single inventory.** A.5 absorbed into it and retained as evidence; A.5 is stale where the two disagree | Closes **R3**, executed from RC29's enumeration. Supersedes A.5-as-inventory, §5 Stage 4's "every distinct threshold constant" AC, §5 Stage 9's EM AC, and the single-boolean stage-decoupling mechanism. Adds Stages 2b, 6b, 12b, sub-stages 0.0/0.6/0.7/0.8/0.9, and the critical path. **Delegated authority** — see the F13 note at §5 |
 | DR-12 | `entity_id` vs `component_label` | **OPEN — decide with DR-14** | Engine posture implies `component_label` | M6(a) |
 | DR-13 | Runtime substrate | OPEN | — | M17; `DbtBestPractices.md` Appendix B.1 recommends `:memory:` + parquet |
 | DR-14 | Product posture | **CURRENT (2026-08-20)** | **Engine the platform calls** | §A.6 Q1, resolved and marked |

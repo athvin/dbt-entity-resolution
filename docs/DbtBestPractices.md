@@ -112,9 +112,15 @@ measurement and reaches a different conclusion does win. §1 states the full ord
 **Highest first:**
 
 1. **Measured `[RUN]` / `[RECON]` findings in `DesignDoc.md` Appendix A — as data.** A measurement is
-   overturned only by a better measurement, never by an argument.
-2. **`DesignDoc.md` numbered architectural decisions (D1–D11, and successors).** A D-number may
-   *reinterpret* an Appendix A measurement and reach a different conclusion. When it does, it wins.
+   overturned only by a better measurement, never by an argument. **`DesignDoc.md` Appendix B's G-findings
+   and R-findings rank here too**, as Appendix-A-class evidence: they are overturned by argument, and are
+   adopted only via a D-number or a DR row.
+2. **`DesignDoc.md` numbered architectural decisions (D1–D12, and successors), and the `§B.3` decision
+   register.** A D-number may *reinterpret* an Appendix A measurement and reach a different conclusion;
+   when it does, it wins. The **register ranks with them**, because a DR row records the current value of a
+   D-number-class decision and is where supersession is looked up. Register and D-number are two views of
+   one decision: the row owns its *status*, the body owns its *content*, and a change to either touches
+   both in the same commit.
 3. **This document.**
 4. **Habit.**
 
@@ -139,16 +145,14 @@ happens to a document that binds in practice and ranks nowhere in writing. A poi
 orientation; a citation *of* `GOAL.md` as grounds for a technical choice is a defect — the grounds are the
 D-number or the DR row it points at.
 
-> **[REVIEW 2026-08-23] RC32 — `DesignDoc` Appendix B ranks in no tier.** It is not tier 1 — its B.0.1
-> states the pass "introduces no `[RUN]` and no `[RECON]` evidence" — and not tier 2, yet this document
-> already treats it as binding: E.1 defers to "B.3 marks all four **MISSING**", §12.7 exists to answer a
-> G-class finding, and `DesignDoc`'s v2 note says to treat B.3's `CONFLICT`/`MISSING` rows as blocking. De
-> facto it binds; de jure a reader applying this list ranks it below habit. Add the missing entry: the
-> **B.3 decision register ranks with tier 2** — a DR row records the current value of a D-number-class
-> decision and is where supersession is looked up — and **G/R findings rank as Appendix-A-class evidence**,
-> overturned by argument, adopted only via a D-number or a DR row. Tier 2's absence "was not cosmetic" last
-> time; this is the same hole one appendix later. (The companion carries the mirror half of this fix: see
-> the review note at its header precedence rule.)
+> **[REVIEW 2026-08-23] Fixed (F17) — RC32 is closed by the two additions above.** `DesignDoc` Appendix B
+> ranked in no tier: not tier 1, since its B.0.1 states the pass *"introduces no `[RUN]` and no `[RECON]`
+> evidence"*, and not tier 2 — yet this document already treated it as binding (E.1 defers to *"B.3 marks
+> all four **MISSING**"*, §12.7 exists to answer a G-class finding, and `DesignDoc`'s v2 note says to treat
+> B.3's `CONFLICT`/`MISSING` rows as blocking). De facto it bound; de jure a reader applying this list
+> ranked it below habit. Tier 2's absence *"was not cosmetic"* last time, and this was the same hole one
+> appendix later. The companion carries the mirror half at its header precedence rule, which now carves
+> §B.3 out by name.
 
 ---
 
