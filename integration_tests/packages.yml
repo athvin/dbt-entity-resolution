@@ -1,0 +1,5 @@
+---
+# Development packages belong here, NOT in the root packages.yml, which is
+# force-installed into every consumer project.
+packages:
+  - local: ../

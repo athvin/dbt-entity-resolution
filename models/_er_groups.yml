@@ -1,0 +1,22 @@
+---
+version: 2
+
+# Groups exist here for access control, not for documentation. `restrict-access:
+# true` plus `+access: private` plus `+group:` is the three-part mechanism that
+# makes a consumer physically unable to `ref()` our staging and intermediate
+# internals (3.30).
+#
+# Section 12.4: a singular test belongs to NO group unless it declares one, and
+# a test outside the group is refused access to a private model. Every singular
+# test in this package therefore carries `{{ config(group='er_core') }}`.
+#
+# The file name leads with an underscore because 3.2 requires non-model YAML to,
+# and section 5's layout names it explicitly.
+groups:
+  - name: er_core
+    owner:
+      # Section 19.4 and section 5's CODEOWNERS: the parity and divergence
+      # artefacts have named owners. Until CODEOWNERS lands with the repository
+      # metadata in a later step, this records the group's existence rather than
+      # claiming an owner nobody has agreed to be.
+      name: dbt-er maintainers

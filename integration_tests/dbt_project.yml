@@ -1,0 +1,74 @@
+---
+name: "dbt_er_integration_tests"
+version: "0.1.0"
+config-version: 2
+
+require-dbt-version: [">=1.10.0", "<3.0.0"]
+profile: "dbt_er"
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+analysis-paths: ["analyses"]
+clean-targets: ["target", "dbt_packages"]
+
+# ---------------------------------------------------------------------------
+# BYTE-IDENTICAL to the package's flags: block.
+# `flags:` are read ONLY from the INVOKED project, and CI invokes dbt from
+# here -- so the package's block does not apply to this build at all.
+# scripts/check_flags_parity.py asserts the two stay identical; without it the
+# project that actually runs the tests could be strictly less strict than the
+# one that ships.
+# ---------------------------------------------------------------------------
+flags:
+  send_anonymous_usage_stats: false
+
+  warn_error_options:
+    error: all
+    warn: []
+    silence: ["InvalidMacroAnnotation"]
+
+  validate_macro_args: true
+  require_generic_test_arguments_property: true
+  require_all_warnings_handled_by_warn_error: true
+  require_resource_names_without_spaces: true
+  require_explicit_package_overrides_for_builtin_materializations: true
+  skip_nodes_if_on_run_start_fails: true
+  source_freshness_run_project_hooks: true
+  state_modified_compare_more_unrendered_values: true
+
+  state_modified_compare_vars: true
+  require_unique_project_resource_names: true
+  require_ref_searches_node_package_before_root: true
+  require_valid_schema_from_generate_schema_name: true
+  require_sql_header_in_test_configs: true
+  require_corrected_analysis_fqns: true
+  require_source_and_semantic_model_names_without_spaces: true
+  require_event_names_in_deprecations: true
+
+  allow_jinja_file_extensions: false
+  support_custom_ref_kwargs: false
+  use_catalogs_v2: false
+  latest_version_pointer_enabled_by_default: false
+
+vars:
+  # This project supplies what the package deliberately refuses to default.
+  # A threshold is a precision/recall trade against a cost function; here the
+  # cost function is "exercise the gates", so three thresholds and one gray
+  # band is the useful shape rather than a justified production value.
+  er_thresholds:
+    - auto_merge: 0.5
+    - auto_merge: 0.9
+      review_low: 0.7
+    - auto_merge: 0.99
+
+# C.1 delta 11. store_failures_as: table lives HERE and not in the package:
+# in the package it materialises 500 rows of person data into every consumer's
+# warehouse (section 12.5, 3.52).
+data_tests:
+  dbt_er:
+    +severity: error
+    +store_failures_as: table
+    +schema: er_test_failures
+    +limit: 500
