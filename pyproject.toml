@@ -132,6 +132,10 @@ ignore = [
 # `Any` under a different name. Writing `Any` and saying why is more honest
 # than importing private types to satisfy a linter.
 "scripts/gen_baseline.py" = ["ANN401"]
+# ANN401 on er_sidecar.py: sqlglot's `exp` module and its expression nodes are
+# passed through untyped, and annotating them would mean importing private
+# sqlglot types into a module whose whole point is not to trust its input.
+"scripts/er_sidecar.py" = ["ANN401"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -112,6 +112,12 @@ repos:
         language: system
         pass_filenames: false
 
+      - id: er-model-json-sidecar
+        name: "model JSON passes the 1.5 trust boundary"
+        entry: python scripts/er_sidecar.py fixtures/model_jsons/fake_1000_v1.json
+        language: system
+        pass_filenames: false
+
       - id: er-pii-heuristics
         name: "fixtures and seeds are synthetic, and declare it"
         entry: python scripts/check_pii_heuristics.py
