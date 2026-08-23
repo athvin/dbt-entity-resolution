@@ -806,7 +806,12 @@ In practice this is rarely binding, and for a reason worth noticing: the seed re
 select directly from a `ref()`, and under §7 every upstream stage already *is* a relation. The companion CTE
 is a symptom of an under-decomposed pipeline, which is the thing this rule exists to prevent.
 
-> **[REVIEW 2026-08-23] RC38 — "Rarely binding" is wrong for the first model this rule meets.** `DesignDoc`
+> **[REVIEW 2026-08-23] Fixed (F33) — RC38 is closed by Appendix B.9 / DesignDoc DR-24.** §7.3.1 is scoped
+> rather than waived; see B.9 for the definition and for why options (a) and (b) were rejected.
+>
+> <details><summary>Original review note (RC38), retained</summary>
+>
+> **RC38 — "Rarely binding" is wrong for the first model this rule meets.** `DesignDoc`
 > D4's canonical formulation — the one §7's contract row mandates for `er_entity_clusters`, and the one D4b
 > keeps as the reference implementation — opens with `bidir`, a non-recursive companion CTE doubling the
 > edge list. The seed-selects-from-`ref()` reasoning above does not cover it: `bidir` is joined from the
@@ -816,6 +821,8 @@ is a symptom of an under-decomposed pipeline, which is the thing this rule exist
 > structure: (a) `bidir` as a model (2×|`er_int_edges`| rows, `table` under §7); (b) a §18
 > `cte_waiver_reason` against the zero-default cap; (c) scoping 7.3.1 to exempt orientation-doubling
 > adapters. `DesignDoc` D5's `init_params` is the second instance to settle in the same decision.
+>
+> </details>
 
 #### 7.3.2 The collision with ST05, which predates this rule
 
@@ -2608,6 +2615,18 @@ must be settled before the harness lands. **Recommendation: (a).**
 >
 > </details>
 
+**B.9 — A companion CTE inside `WITH RECURSIVE` (v2.3).** ~~Open.~~ **Resolved 2026-08-23: §7.3.1 is scoped, not waived.** Register row **DR-24**.
+
+§7.3.1 says a `WITH RECURSIVE` clause may contain only its recursive term(s). D4's `bidir` — `select l as src, r as dst from edges UNION ALL select r as src, l as dst from edges` — is a non-recursive companion joined *from* the recursive term, and §7.3.1's own escape (the seed may select directly from a `ref()`) does not cover it. **Undirected-graph recursion always needs a doubled-edge adapter**, so the ban binds on the flagship model from day one, despite §7.3.1's claim that it is "rarely binding" (RC38, and `DesignDoc` RC2).
+
+**The value in force.** A `WITH RECURSIVE` clause may also contain a companion CTE that is a **pure single-source projection of a `ref()`ed relation**: no aggregate, no join, no set-membership filter — column derivation and orientation only.
+
+**Why (c) rather than (a) or (b).** Option (a), making `bidir` a model, costs a `table` at **2×** the edge count under §7 to hold an orientation flip with no independent meaning; §7.3.2's own test — a construct producing a row set another stage consumes is a stage, one existing only to serve a single statement is not — puts it firmly on the inline side. Option (b), a §18 waiver, is worse in a subtler way: §7.3.3 caps `er_max_cte_waivers` at **zero deliberately**, and requiring a waiver for something structurally unavoidable means the rule is wrong rather than the situation exceptional. A rule that every correct undirected-graph recursion must violate is not a rule.
+
+**The enforcement gap is real and is the same one 3.68 already declares.** Distinguishing "pure projection" from an arbitrary CTE needs a parser, and neither SQLFluff 4.3.0 nor sqlglot handles `USING KEY`. So this exemption is enforced by review, exactly as 3.68 is, and it is labelled as such rather than presented as gated. What keeps it narrow is that it is a *definition* a reviewer can apply mechanically, not a judgement call.
+
+**D5's `init_params` is the second candidate instance** and is *not* pre-approved here: when D5 is written, it is checked against the definition above like anything else.
+
 > #### B.1's resolution, in force — the harness reads only parquet; dbt keeps a file database
 
 **Value in force (B.1, 2026-08-23).** The parity harness **never opens the DuckDB database**. Every model it compares is
@@ -2696,7 +2715,7 @@ across runs, and B.7 is about that artefact carrying raw `query_sql` with litera
 deciding B.6 first turns a single-run exposure into an accumulating one (§14.10, C.7 delta 8, RC52).
 **Blocks:** B.5, which has no trailing median to calibrate against until this resolves, and C.7 delta 8.
 
-**B.8 — ST05 under the CTE ban (v2.1).** §7.3 bans non-recursive CTEs; §11.1's `forbid_subquery_in = both`
+**B.8 — ST05 under the CTE ban (v2.1).** *(Register row **DR-23** created 2026-08-23, closing RC46's second half; the row is OPEN and blocks DesignDoc Stages 1 and 5. Its value is set by **DesignDoc §5 Stage 0.8**, which owns the option-(c) `EXPLAIN ANALYZE` spike — so (a) is not adopted by default.)* §7.3 bans non-recursive CTEs; §11.1's `forbid_subquery_in = both`
 forbids the FROM-clause subquery that `DesignDoc` D11 rec 4 mandates; repeating the expression is rejected on
 float-parity grounds. One of the three must give. Options: (a) relax ST05 to `join`, permitting a subquery
 for single-projection expression reuse; (b) make the clamped product its own model, which costs a pair-grain
@@ -2705,7 +2724,14 @@ relation (~100 B/pair) to hold one intermediate float; (c) use a DuckDB **latera
 single-evaluation to be *structural*. **Recommendation: (a), after testing (c).** If (c) holds it is strictly
 better, since it leaves the determinism rule set untouched. Changes 3.15 either way.
 
-> **[REVIEW 2026-08-23] RC46 — B.8's blocking consequences are unstated, and it has no register row.**
+> **[REVIEW 2026-08-23] Fixed (F34) — RC46 is closed.** B.8 now has a register row, **DR-23**, marked OPEN
+> and blocking `DesignDoc` Stages 1 and 5. Its option-(c) spike has an owner: **`DesignDoc` §5 Stage 0.8**,
+> whose result sets the value — so option (a) is not adopted untested by default, which was this note's
+> central worry.
+>
+> <details><summary>Original review note (RC46), retained</summary>
+>
+> **RC46 — B.8's blocking consequences are unstated, and it has no register row.**
 > Three sequencing facts belong here. First, §11.1 already concedes that until B.8 is decided
 > "`er_int_scored_pairs` cannot be written to satisfy both rules at once" — that makes B.8 a blocker on
 > `DesignDoc` Stage 5, and on Stage 1's snapshot AC (which reviews rendered scoring SQL containing D11
@@ -2715,6 +2741,8 @@ better, since it leaves the determinism rule set untouched. Changes 3.15 either 
 > and Stage 0 is where the plan puts spikes; schedule it there, or "after testing (c)" has no owner and (a)
 > gets adopted untested by default. (Editorial: B.8 sits before B.7 — a v2.1 insertion artifact; ids are
 > stable per §23, so reorder the sections or note the ordering.)
+>
+> </details>
 
 **B.7 — Observability redaction (v2).** §14.10: `QueryLog` carries raw SQL, which can embed literal attribute
 values, into an artefact retained 14 days. Options: strip `query_sql`, hash it, or keep it and shorten

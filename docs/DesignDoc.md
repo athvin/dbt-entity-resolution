@@ -809,7 +809,17 @@ select unique_id, entity_id from cc
 > supports. The *name* is not what was measured. Read every `entity_id` above as `component_label`; §1.6
 > says why, and Stage 6 ships it under the new name.
 
-> **[REVIEW 2026-08-23] RC2 — This formulation collides with `DbtBestPractices.md` §7.3.1 / 3.67–3.68.**
+> **[REVIEW 2026-08-23] Fixed (F32) — RC2 is closed by `DbtBestPractices.md` B.9 / DR-24.** §7.3.1 is
+> **scoped**, not waived: a `WITH RECURSIVE` clause may also contain a companion CTE that is a pure
+> single-source projection of a `ref()`ed relation. `bidir` is exactly that — an orientation-doubling
+> adapter — and undirected-graph recursion always needs one, so a rule every correct instance must violate
+> was the wrong rule rather than a situation needing waivers. Option (a) would cost a `table` at 2× the
+> edge count to hold an orientation flip; option (b) would require raising a waiver cap §7.3.3 sets to zero
+> deliberately. Enforcement shares 3.68's parser gap and is labelled as review, not as a gate.
+>
+> <details><summary>Original review note (RC2), retained</summary>
+>
+> **RC2 — This formulation collides with `DbtBestPractices.md` §7.3.1 / 3.67–3.68.**
 > That rule reads "a `WITH RECURSIVE` clause may contain only its recursive term or terms", and `bidir` is
 > a non-recursive companion CTE. §7.3.1's own escape — the seed relation may select directly from a
 > `ref()` — does not cover it: `bidir` is joined from the *recursive term*, and an undirected-graph
@@ -821,6 +831,8 @@ select unique_id, entity_id from cc
 > zero, so this is a visible diff); (c) scope 7.3.1 to exempt orientation-doubling adapters. D5's
 > `init_params` is the second instance (see RC5 there). Register the decision as the companion's Appendix
 > B.9 and name the resolution here.
+>
+> </details>
 
 **Correctness traps — all three are silent:**
 
@@ -2352,7 +2364,7 @@ At 1M records, (b) costs **139% of the full rebuild** and **5.4× the batch-driv
 
 **Failure scenario.** The AC is satisfied by a node/edge-count guardrail (the only cheap signal), which provably does not fire on the case it exists for. The 20k-chain pathology reaches production and, with no depth cap, runs until the liveness probe kills the pod — losing the whole `dbt build` including the expensive already-materialised stages 3–5.
 
-**Recommendation.** Replace the diameter guardrail with an **iteration cap you can actually enforce**: carry an `iter` column in the `USING KEY` state and add `and cur.iter < {{ var('er_max_cc_iterations', 200) }}` to the recursive term's guard, so the statement terminates cleanly; then a dbt test asserts `count(*) where not converged = 0` and **fails loudly**. O(1) to add, cannot be evaded, turns an unbounded hang into a named test failure. Pair with a *diagnostic* (non-gating) max-component-size check from `cluster_metrics`, and a wall-clock statement timeout in the profile so the pod fails fast rather than being OOM-killed. Add the absolute runtime gate from M11.
+**Recommendation.** Replace the diameter guardrail with an **iteration cap you can actually enforce**: carry an `iter` column in the `USING KEY` state and add `and cur.iter < {{ var('er_max_cc_iterations', 200) }}` to the recursive term's guard, so the statement terminates cleanly; then a dbt test asserts `count(*) where not converged = 0` and **fails loudly**. O(1) to add, cannot be evaded, turns an unbounded hang into a named test failure. Pair with a *diagnostic* (non-gating) max-component-size check from `cluster_metrics`. ~~and a wall-clock statement timeout in the profile so the pod fails fast rather than being OOM-killed~~ — **there is no such knob: `[RUN]` 2026-08-23 on `duckdb==1.5.5`, `duckdb_settings()` returns 0 rows for `%timeout%` and `%interrupt%` (G13).** The iteration cap is therefore the *only* guardrail, not one of two; the backstop that does exist is `memory_limit`, which fails hard rather than timing out. Add the absolute runtime gate from M11.
 
 ---
 
@@ -2617,7 +2629,7 @@ Six items, with the honest scope statement they imply. Everything **not** on thi
 | C3 | **Backend `link_type` selection** | `[SRC] inference.py:227-246` rewrites `link_only` → `two_dataset_link_only` when `len(input_tables_dict) == 2`. `[RECON]` `source_dataset_column_name` is always `"source_dataset"` in the JSON even for `dedupe_only`, while the runtime `source_dataset_input_column` is `None`. | Explicit compile-time vars `er_backend_link_type`, `er_has_source_dataset`. |
 | C4 | **`two_dataset_link_only` l/r orientation** | `[SRC] vertically_concatenate.py:293-294` — `min(df_obj.templated_name)` over input-table aliases. Not in the JSON. | Explicit `er_left_table` var, or refuse the configuration (Open Question 3). |
 | C5 | **Variable numbers of models** | `[SRC] dbt/parser/read_files.py:151-175` — filesystem search, one node per file; `PluginNodes.add_model` takes `ModelNodeArgs` with **no `raw_code`**. | D7 already fixes TF. **Exploding rules need the same treatment**: `[SRC] blocking.py:518-614` materialises one `__splink__marginal_exploded_ids_blocking_rule_mk_<k>` table per rule and switches the terminal projection to `min(match_key) GROUP BY join_key_l, join_key_r`. Emit the marginals as **CTEs in one model** (`unnest` composes in a CTE) and switch the terminal shape when `arrays_to_explode` appears. Out of scope for v1 per B3. |
-| C6 | **Recursion depth / statement bounds** | `[RECON]` `duckdb_settings()` filtered on `%recur%` returns 0 rows. There is no depth cap. | Iteration counter in the `USING KEY` state (M5) + a profile statement timeout. |
+| C6 | **Recursion depth / statement bounds** | `[RUN]` 2026-08-23 on `duckdb==1.5.5`: `duckdb_settings()` returns **0 rows** for `%recur%`, `%timeout%` **and** `%interrupt%`. No depth cap, **and no statement timeout** (G13). | Iteration counter in the `USING KEY` state (M5) — **the only guardrail**. `memory_limit` is the backstop and fails hard rather than timing out, which matches D4a's finding that `USING KEY` OOMs rather than degrading. |
 
 **Sidecar (the fix for C2, C3, C4 that keeps runtime Python-free).** Amend principle 4 to: *"The model JSON plus a small, explicitly-versioned compile-time sidecar is the contract."* The sidecar is a generated, committed, hashed artefact produced by a Python preprocessing step that imports Splink and emits, per level: the resolved `comparison_vector_value`, the resolved `m`/`u` after Splink's own defaulting, the resolved `tf_u_exact_match` (or null), plus `er_backend_link_type`, `er_has_source_dataset` and `er_left_table`. Guard it with a byte-equality regeneration test — the same generated-file-with-parity-test pattern the incumbent already uses for `models/sources.yml`. This keeps `dbt build` free of Splink at **runtime** (DoD 2 as corrected in M17) while making the two algorithms Jinja cannot express *exact* rather than approximated. The gamma counter and `_default_m_values` are portable arithmetic and stay in Jinja.
 
@@ -3485,16 +3497,36 @@ positivity"* — with no stated mechanism and no AC, while the clamp that provid
 specified in a different paragraph for a different reason. The invariant and its proof were not connected.
 *(§3.1 now connects them.)*
 
-Also **UNVERIFIED and worth checking:** M5 rec and A.2 C6 both mitigate the unbounded-recursion risk partly
-with "a wall-clock statement timeout in the profile" `[GREP]` `statement timeout` → 2, both
-recommendations. This pass did not verify that DuckDB 1.5.5 or dbt-duckdb 1.11.0 exposes such a knob. Given
-that the same section records `duckdb_settings()` has **no** recursion-depth setting, confirm the timeout
-exists before treating M5's guardrail as complete — if it does not, M5 rests entirely on the in-query
-iteration cap, which is fine but should be stated as such.
+~~Also **UNVERIFIED and worth checking:**~~ **VERIFIED 2026-08-23 — the timeout does not exist.** `[RUN]`
+on the pinned engine, `duckdb==1.5.5`, `select version()` → `v1.5.5`:
+
+| `duckdb_settings()` where name ilike | rows |
+|---|---|
+| `%timeout%` | **0** |
+| `%recur%` | **0** |
+| `%interrupt%` | **0** |
+| `%limit%` | 3 — `memory_limit`, `pivot_limit`, `write_buffer_row_group_memory_limit` |
+
+**There is no statement timeout, and there is no recursion-depth setting.** The only interruption
+mechanism is `Connection.interrupt()`, a Python call from another thread — which is Python at runtime,
+unavailable from a profile and unavailable inside `dbt build`. It is not a knob this project can use.
+
+**Two consequences, and M5 and A.2 C6 are corrected accordingly.** First, **M5's guardrail rests entirely
+on the in-query iteration cap**, exactly as this finding said to state if the timeout turned out not to
+exist. There is no second line of defence, which raises the cap from a belt-and-braces addition to the only
+thing standing between a pathological component and an unbounded recursion. Second, the backstop that
+*does* exist is `memory_limit`, and it is a **hard failure rather than a timeout** — consistent with D4a's
+measurement that `USING KEY` is memory-resident and **OOMs rather than degrading**. A runaway recursion
+fails loudly at a bounded memory ceiling; it does not run forever, and it does not take the machine with it.
+
+This also confirms on the *pinned* version what D4 trap 3 recorded — no `max-recursion-depth` setting —
+rather than leaving it resting on an earlier recollection.
 
 **Recommendation.** An **error catalogue** with stable identifiers (`ER-001` …), each mapped to M7's
-exit-code taxonomy, each with one test that provokes it and asserts the message. Verify the
-statement-timeout claim and correct M5 / A.2 C6 either way.
+exit-code taxonomy, each with one test that provokes it and asserts the message. ~~Verify the
+statement-timeout claim and correct M5 / A.2 C6 either way.~~ **Done 2026-08-23 — see above.** The error
+catalogue itself remains open and is Stage 12b work; §2.0's missing-column error and §1.5's five validation
+errors are its first entries.
 
 ---
 
@@ -3654,7 +3686,7 @@ capability exists; the path through it is undocumented.
 
 ---
 
-### G20 — Licensing and attribution are absent
+### G20 — Licensing and attribution are absent · **evidence gathered 2026-08-23; the §1 paragraph is PE-2**
 
 **Severity:** MODERATE · **Attacks:** §1, §8 DoD · **Scope:** in-scope
 
@@ -3664,8 +3696,18 @@ and **deliberately replicates one of its defects** (S4's `min(match_key)` VARCHA
 a `LICENSE`; the design says nothing about the relationship.
 
 **Evidence.** `[DOC]` S4 commits to replicating the bug; §A.2's scope statement positions the output as a
-Splink-compatible artifact. **UNVERIFIED** — this pass did not confirm Splink 4.0.16's license terms;
-verify from the distributed package metadata rather than from memory before writing anything normative.
+Splink-compatible artifact. ~~**UNVERIFIED**~~ — **verified 2026-08-23 from two independent sources, as
+this finding instructed (from package metadata, not from memory):**
+
+| Source | Result |
+|---|---|
+| PyPI metadata for `splink==4.0.16` | `license_expression: MIT` |
+| `github.com/moj-analytical-services/splink` at tag **`v4.0.16`**, `LICENSE` | `MIT License` · `Copyright (c) 2020 Ministry of Justice` |
+
+This repository's own `LICENSE` is also MIT (`Copyright (c) 2026 AthVIN`), so the licences are compatible
+and no copyleft obligation attaches. **The package vendors no Splink code**; it reimplements the
+transformations from source study and passes through SQL strings that the *consumer's own trained model*
+contains. What it does carry is attribution, which is the substance of the recommendation below.
 
 **Recommendation.** One paragraph in §1: Splink's license, the attribution this package carries, and what
 its own `LICENSE` means for a consumer. Low effort, and annoying to retrofit after external adoption.
@@ -3806,6 +3848,8 @@ force), **SUPERSEDED** (with the pointer), **OPEN** (needs an answer), **CONFLIC
 | DR-18 | Data classification & retention | **MISSING** | — | **G4** |
 | DR-19 | Parity claim's validity domain | **MISSING** | — | **G5** |
 | DR-20 | Package versioning & compatibility | **MISSING** | — | **G12**, depends on **G6** |
+| DR-23 | **ST05 under the CTE ban** | **OPEN — blocks Stages 1 and 5** | — | `DbtBestPractices.md` **B.8**, which postdates this register and had no row (RC46). §11.1 concedes `er_int_scored_pairs` cannot satisfy §7.3's CTE ban, `forbid_subquery_in = both` and float parity's rejection of a repeated expression all at once. Doc recommends *"(a), after testing (c)"*; **§5 Stage 0.8 owns the (c) spike**, and its result sets the value |
+| DR-24 | **Companion CTE inside `WITH RECURSIVE`** | **CURRENT (2026-08-23)** | **§7.3.1 is scoped, not waived**: a `WITH RECURSIVE` clause may also contain a companion CTE that is a **pure single-source projection of a `ref()`ed relation** — an adapter, not a stage | `DbtBestPractices.md` **B.9**, opened and closed together (RC38, RC2). D4's `bidir` is an orientation-doubling projection and undirected-graph recursion always needs one, so the ban bound on the flagship model from day one. Enforcement shares 3.68's parser gap. **Delegated authority** |
 | DR-22 | **Quality floor and its owner** | **CURRENT (2026-08-23)** | **§1.8.** Committed per-fixture `er_blocking_recall_floor` (two-sided), `er_f1_floor` and `er_max_cluster_size`, set at Stage 0.4 from the **fixed** model and gating from Stage 2 onward. **No package default threshold** — an unset `thr_auto_merge` fails compilation. Floors live in a file with a `CODEOWNERS` entry | Answers §A.6 **Q5**, which had no register row and no owner. Evidence: M12's `[RECON]` — the frozen model measures F1 0.7138 / recall 0.5550, two rules take it to 0.9809 / 0.9173, and the removed default t = 0.9 costs ~330 true pairs for zero precision benefit. **Delegated authority** |
 | DR-21 | Unit-test coverage policy | **CURRENT (2026-08-23)** | **Every model; cases decided when the model is written (D12)** | Supersedes M17 rec (c)'s five-model scope — marked there. No automatic exemption class: a recursive-SQL or toolchain-regression exclusion is a dated, reasoned waiver under `DbtBestPractices.md` 3.43. Gated by its 3.20 |
 
