@@ -61,7 +61,7 @@ A = CONFLICT, B = MISSING, C = OPEN with a fired deadline, D = OPEN and schedule
 | DR-11 stage inventory | **A** | every stage | ✅ **CURRENT 2026-08-23** — §5 is the single inventory | PA-1 (#2) |
 | DR-17 model JSON trust boundary | **B** | Stage 1 | ✅ **CURRENT 2026-08-23** — untrusted input, validated in the sidecar (§1.5) | PA-3 (#4) |
 | DR-16 input contract | **B** | Stage 1, anything reading `stg_input` | ✅ **CURRENT 2026-08-23** — §2.0, one relation, three preconditions as package tests | PA-4 (#5) |
-| B.1 / DR-13 runtime substrate | **C** | Stage 0.3 | open | PA-5 |
+| B.1 / DR-13 runtime substrate | **C** | Stage 0.3 | ✅ **CURRENT 2026-08-23** — harness reads only parquet; dbt keeps a file database | PA-5 (#6) |
 | B.8 ST05 under the CTE ban | **C** (no register row) | Stages 1 and 5 | open | PA-6 |
 | DR-12 `entity_id` vs `component_label` | **C** | Stage 6b, `entity_id` across Stage 6 | open | PA-7 |
 | DR-08 / B.2 threshold as var or dimension | D | Stage 6 *contract* | open | PA-8 |
@@ -80,9 +80,9 @@ DR-15, DR-21.
 Ids are `PA-n` … `PE-n`, prefixed because bare `A`–`E` and `D1`–`D12` already mean Appendix A–E and
 decisions D1–D12 in these documents. Full descriptions live in the approved plan.
 
-**In flight:** PA-4 — close DR-16, the input contract.
+**In flight:** PA-5 — close B.1 / DR-13, the runtime substrate.
 
-**Done:** PL-0 (#1, `5711322`) · PA-1 (#2, `59e8d93`) · PA-2 (#3, `297f25d`) · PA-3 (#4, `61995e5`) · PA-4 (#5)
+**Done:** PL-0 (#1, `5711322`) · PA-1 (#2, `59e8d93`) · PA-2 (#3, `297f25d`) · PA-3 (#4, `61995e5`) · PA-4 (#5, `3d12e83`) · PA-5 (#6)
 
 **Next, in dependency order:**
 
@@ -131,6 +131,7 @@ Newest first. One line per shipped change, plus anything that changed the plan.
 
 | Date | Event |
 |---|---|
+| 2026-08-23 | **PA-5 — B.1 / DR-13 closed, and *not* the way the document recommended.** M17 rec (a) bundles two things: a parquet-only harness and a `:memory:` substrate. The first is adopted — the harness never opens the database, and `integration_tests/` exports every compared model with a `COPY` post-hook (never the package, per 3.52). The second is **rejected on evidence that postdates the recommendation**: C.7's `build` job runs **five separate dbt invocations**, and an in-memory database does not survive between processes, so `dbt seed` becomes unimplementable and `dbt docs generate` would catalog an **empty** database — leaving dbt-bouncer's whole catalog tier passing over nothing. `:memory:` was buying a *structural* guarantee that harness and dbt are never siblings; what it prevents is a **loud** failure (`Conflicting lock is held`), and what it costs is a **vacuous pass**. That trade runs the wrong way in this project. D11 is unaffected — the export is a post-hook, not a materialization. RC45 closed by the mirror image of what it feared: `profiles.yml` survives unchanged, but by decision, with the reason recorded beside it. |
 | 2026-08-23 | **PA-4 — DR-16 closed.** §2.0 is the input contract: one relation named by `er_input_relation` (the package ships zero sources, per M4b); v1 arity is **one table**, because Stage 12.1 forbids `source_dataset` and Splink's `UNION ALL` degenerates to a plain select — and when v2 needs a union, the **consumer owns it**, since §3.5 needs the *global* concat and only they know what global means. `unique_id` VARCHAR / NOT NULL / UNIQUE, hoisted out of Stage 12.1 where a reader would not look for it. Declared columns are a parse-time var (D1's corollary, applied to inputs for the first time). A missing column fails at **compile time naming the column** instead of raising a `Binder Error` from inside a generated `CASE`. The three preconditions ship as tests **in the package**, so they fail in a consumer's build — the uniqueness one above all, because D3's `l.uid < r.uid` means two records sharing an id never pair, silently. Stage 1's only remaining blocker is B.8. |
 | 2026-08-23 | **PA-3 — DR-17 closed.** The model JSON is untrusted input, validated once at compile time in the sidecar (§1.5, new): D6's list becomes a closed allow-list checked against the **parsed tree**; non-deterministic functions, subqueries and statement terminators rejected; the input bounded; and `er_model_sha` redefined as the hash of the **validated** artifact, so a JSON that skipped the sidecar has no sha and does not build. Accepted cost, stated: a Splink-produced JSON can fail our validation — a supported-configuration boundary in the same class as Stage 12.1's, not a bug. Stage 1 gains five negative tests and loses a blocker. |
 | 2026-08-23 | **PA-2 — the rebuild instructions are now correct.** Appendix D gains **D.1, the bootstrap order** (RC53) with **Waiver B-1** for the commits where all 71 §3 rows are new at once, and a per-delta table saying which C-deltas apply before first run. §23 gains the **canonical-home rule**; Appendix C gains its **handover rule**. Nine further notes closed, each a defect the rebuild would otherwise have faithfully reproduced: 3.52 banned the hook §2 requires (RC34); C.1 deltas 1/4/6 pointed at `vars:` when their home is the hardening macro, leaving the gate consumer-disarmable (RC48); C.5's text exists nowhere and said otherwise (RC50); two pre-commit hooks could never fire on `integration_tests/` (RC51); C.7 delta 8 cited a resolution that does not exist and would widen the §14.10 egress if applied before B.7 (RC52); `.sqlfluffignore` exempted a model that does not exist while the real one would fail lint (RC41); the four missing `verify_gates.py` injections are named (RC55); RC33, RC39, RC40, RC42, RC45's ordering half, RC54. Open review notes **33 → 20**; the companion is down to RC38 and RC46, both needing Appendix B rows that land with PA-6. |

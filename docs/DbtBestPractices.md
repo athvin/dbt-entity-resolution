@@ -2059,9 +2059,14 @@ blocks on.
 
 - **`dbt seed` must precede `dbt build`.** The package reads a *source*, and a source creates no DAG edge,
   so nothing orders the fixture's creation before the model that reads it `[VERIFIED]`.
-- **The parity harness must run after dbt has exited.** DuckDB takes a **process-level lock**; a second
-  process connecting to the same file fails with `Conflicting lock is held`, and read-only does not help
-  (DesignDoc M17). Harness and dbt cannot be siblings.
+- **The parity harness must run after dbt has exited, and reads only parquet** (B.1, resolved). DuckDB
+  takes a **process-level lock**; a second process connecting to the same file fails with `Conflicting lock
+  is held`, and read-only does not help (DesignDoc M17). Harness and dbt cannot be siblings. The harness
+  therefore **never opens the database at all**: `integration_tests/` exports every compared model to
+  parquet with a `COPY` post-hook, and the harness reads those files and Stage 0.3's parquet baselines.
+  Both sides of every comparator are parquet, which is what B.1's option (a) was really buying.
+  The `parity`, `determinism` and `comparator-sensitivity` jobs therefore `needs: build` and consume its
+  artefact rather than re-running dbt.
 - **`dbt docs generate` must precede the catalog checks**, which need `catalog.json` built against a real
   database.
 
@@ -2576,7 +2581,7 @@ tier is not a precedence rule. §1.1 has four.
 
 These are genuinely unsettled. Each changes something structural and none should be resolved by drift.
 
-**B.1 — Runtime substrate (DesignDoc M17).** DuckDB's process-level lock means the pytest harness and dbt
+**B.1 — Runtime substrate (DesignDoc M17).** ~~Open.~~ **Resolved in v2.3 — see the resolution below.** DuckDB's process-level lock means the pytest harness and dbt
 cannot both hold the database. Two options: (a) dbt writes to `path: ':memory:'` and models export to
 parquet, so the harness reads **only parquet** and never opens the database — this also matches the Stage
 0.3 baseline format, making both sides of every comparator parquet; or (b) keep a file database and run the
@@ -2584,12 +2589,11 @@ harness *inside* the dbt process via a plugin or `on-run-end` hook, never as a s
 `profiles.yml` in Appendix C uses a file path, which is option (b) without the in-process harness — so this
 must be settled before the harness lands. **Recommendation: (a).**
 
-> **[REVIEW 2026-08-23] Fixed (F28) — RC45's ordering half is closed; the register row lands with B.1.**
-> B.1 now reaches ordering artifacts in three places: `DesignDoc` §5 **Stage 0.0 step 4** sequences it
-> explicitly *before* the scaffold rebuild touches `profiles.yml`, §5 **Stage 0.3** carries "Blocked by
-> B.1 / DR-13", and Appendix D.1's sequence puts `profiles.yml` in step 1 — which is precisely why the
-> decision cannot wait. **Still open:** DR-13 carries no "blocks Stage 0.3" marker in `DesignDoc` §B.3.
-> That is a register edit and lands with the decision itself.
+> **[REVIEW 2026-08-23] Fixed (F28, completed F30) — RC45 is closed.** B.1 reached ordering artifacts
+> first — `DesignDoc` §5 Stage 0.0 step 4, §5 Stage 0.3's blocker line, and Appendix D.1's sequence — and
+> then **B.1 itself was decided before the scaffold could rebuild `profiles.yml`**, which is exactly what
+> RC45 asked for. The outcome is the mirror image of the drift it warned about: the file survives
+> unchanged, but by decision and with the reason recorded beside it. **DR-13 is CURRENT.**
 >
 > <details><summary>Original review note (RC45), retained</summary>
 >
@@ -2603,6 +2607,63 @@ must be settled before the harness lands. **Recommendation: (a).**
 > forbids.
 >
 > </details>
+
+> #### B.1's resolution, in force — the harness reads only parquet; dbt keeps a file database
+
+**Value in force (B.1, 2026-08-23).** The parity harness **never opens the DuckDB database**. Every model it compares is
+exported to parquet by a `COPY` post-hook declared in `integration_tests/dbt_project.yml` — never in the
+package, per 3.52 — and the harness reads only those parquet files and Stage 0.3's parquet baselines. dbt
+itself keeps a **file** database at `DBT_ER_DB_PATH`, as C.3 already has it.
+
+**This is option (a)'s contract on option (b)'s substrate, and the split is the decision.** M17 bundles two
+separate things under (a): the parquet-only harness, and `path: ':memory:'`. The first is what actually
+solves the lock problem. The second does not survive contact with this project's own CI.
+
+**Why `:memory:` is rejected.** C.7's `build` job runs **five separate dbt invocations** — `dbt seed`,
+`dbt build --empty`, `dbt build --full-refresh`, `dbt run-operation`, `dbt docs generate`. An in-memory
+database does not survive between processes, so:
+
+- `dbt seed` would seed a database that dies when the process exits, and §15's *"`dbt seed` must precede
+  `dbt build`"* becomes unimplementable rather than merely awkward;
+- `dbt docs generate` would build `catalog.json` against an **empty** database. §15 requires it to precede
+  the catalog checks *"which need `catalog.json` built against a real database"* — and dbt-bouncer's whole
+  catalog tier would then pass over nothing.
+
+That last one decides it. A catalog tier passing vacuously is §12.7's *"zero differences by comparing zero
+rows to zero rows"* wearing a different hat, and this document's central commitment is that a gate which
+cannot fail is not a gate.
+
+**What `:memory:` was buying, and what replaces it.** It made *"harness and dbt are never siblings"*
+**structural** — with no file, there is nothing to lock, so the mistake is impossible. That is a real
+benefit and it is given up knowingly. What it prevents, though, is a **loud** failure: DuckDB raises
+`IOException: Conflicting lock is held`, immediately and unmistakably. What it costs is a **vacuous pass**.
+Trading a loud failure for a silent one is the wrong direction, so the sibling rule stays a sequencing rule
+— enforced by `make` target ordering and by the CI job graph, both of which are checkable — rather than
+becoming a property of the filesystem.
+
+**Follow-through, because adopting this changes three things:**
+
+1. **`profiles.yml` keeps its file path** — but it is kept *by decision* now, not by drift. RC45's warning
+   was that C.3 gets rebuilt verbatim during scaffolding and B.1 resolves itself; the file happens to end
+   up the same, and the reason it does is written down here.
+2. **A `COPY … TO … (FORMAT PARQUET)` post-hook** is added in `integration_tests/dbt_project.yml`, exporting
+   every model the harness compares. It cannot live in the package: 3.52 forbids the package writing
+   relations or declaring `on-run-end` hooks into a consumer's warehouse, and §14.8 already confines the
+   observability hooks the same way for the same reason.
+3. **The parity, determinism and comparator-sensitivity jobs `needs: build`** and read only the parquet
+   artefact, never the database. C.7's artefact upload already carries `target/`; it gains the parquet
+   directory.
+
+**What this does not change.** D11 stands: every model is still `materialized: table`. The export is a
+post-hook, not a materialization, so `er_allowed_materializations` stays `["table"]` and dbt-duckdb's
+`external` materialization — which M17 names as one way to do the export — is **not** adopted, because it
+would require carving a second entry into a policy D11 deliberately closed.
+
+> **Decided under delegated authority 2026-08-23.**
+> **Recommendation source:** M17 rec (a), **adopted in part** — its parquet-only harness contract is taken,
+> its `:memory:` substrate is rejected on evidence from C.7 and §15 that postdates the recommendation.
+> M17 rec (b), the `threads` pairing, is adopted as written and C.3 already implements it.
+> **Reversible:** reopen B.1 and DR-13.
 
 **B.2 — Thresholds as a var or a dimension (DesignDoc M16).** `var('er_threshold')` builds one partition per
 run; a `thresholds` relation cross-joined with a composite `USING KEY (thr, unique_id)` produces all of them
@@ -2888,6 +2949,14 @@ packages:
 ```
 
 ### C.3 `profiles/profiles.yml` `[VERIFIED]`
+
+> **The file path is deliberate, not inherited (B.1, resolved 2026-08-23).** RC45's concern was that this
+> block is option-(b)-shaped and would be rebuilt verbatim during scaffolding, resolving B.1 by drift. The
+> block does survive unchanged — but by decision: `:memory:` cannot support C.7's five separate dbt
+> invocations, and the property B.1 needed was *"the harness never opens the database"*, which the parquet
+> export in `integration_tests/` provides on a file substrate. **Do not switch this to `:memory:`** without
+> reopening B.1; `dbt docs generate` would catalog an empty database and the bouncer's catalog tier would
+> pass over nothing.
 
 ```yaml
 ---
