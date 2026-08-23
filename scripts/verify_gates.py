@@ -346,6 +346,20 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.83",
+        what="point CI's compile gate at the package root while the Makefile parses the project",
+        mutate="noop",
+        command=("python", "scripts/check_ci_makefile_parity.py"),
+        expect="disagrees between",
+        edits=(
+            (
+                ".github/workflows/ci.yml",
+                "      - run: uv run dbt parse --project-dir integration_tests",
+                "      - run: uv run dbt parse",
+            ),
+        ),
+    ),
+    Injection(
         standard="3.82",
         what="divide term frequency by count(*) instead of the non-null count",
         mutate="noop",
