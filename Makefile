@@ -151,7 +151,10 @@ verify-gates:
 	uv run python scripts/verify_gates.py
 
 precommit:
-	uv run pre-commit run --all-files
+	@# SKIP=no-commit-to-branch: the hook checks the CURRENT branch, so it fails
+	@# whenever this target runs on main -- including in CI on a push. It guards
+	@# a developer's `git commit`, which is where it stays armed.
+	SKIP=no-commit-to-branch uv run pre-commit run --all-files
 
 # ---------------------------------------------------------------------------
 build:
