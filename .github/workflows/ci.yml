@@ -89,6 +89,12 @@ jobs:
       - run: uv run pre-commit run --all-files --show-diff-on-failure
         env:
           SKIP: no-commit-to-branch
+      # 3.49 / 3.50 are CI-gated in the section 3 matrix, not pre-commit gated:
+      # the divergence-to-test correspondence is a property of the whole tree,
+      # and 3.50 needs a manifest. Run as its own step so the matrix's Gate
+      # column stays true.
+      - name: "divergence log <-> pinning tests, PARITY.md stage coverage (3.49, 3.50)"
+        run: uv run python scripts/check_divergence_log.py
       # Delta 5: a toolchain vulnerability scan. `uv sync --locked` guarantees
       # reproducibility, not that what is reproduced is safe.
       - name: toolchain vulnerability scan

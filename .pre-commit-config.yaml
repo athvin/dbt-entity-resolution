@@ -86,6 +86,33 @@ repos:
         language: system
         pass_filenames: false
 
+      # C.6 delta 4 (Appendix D.1): the three hooks the delta table names, plus
+      # 3.69's fixture check. 3.49/3.50 are CI-gated per the matrix and run as
+      # their own step in the lint job rather than here.
+      - id: er-standards-matrix
+        name: "every mechanism in the section 3 matrix exists and is wired up"
+        entry: python scripts/check_standards_matrix.py
+        language: system
+        pass_filenames: false
+
+      - id: er-verified-markers
+        name: "[VERIFIED] markers match the installed toolchain"
+        entry: python scripts/check_verified_markers.py
+        language: system
+        pass_filenames: false
+
+      - id: er-baseline-manifests
+        name: "every baseline carries a provenance manifest"
+        entry: python scripts/check_baseline_manifests.py
+        language: system
+        pass_filenames: false
+
+      - id: er-unit-test-fixtures
+        name: "unit-test fixtures are format: sql with explicit casts"
+        entry: python scripts/check_unit_test_fixtures.py
+        language: system
+        pass_filenames: false
+
       # 3.56. Not in C.6's delta table -- the workflow did not exist when that
       # table was written, so there was nothing to harden.
       - id: er-workflow-hardening

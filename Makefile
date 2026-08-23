@@ -123,7 +123,10 @@ lint: platform-note
 repo-checks:
 	@missing=0; \
 	for s in check_yml_pairing check_no_nondeterminism check_flags_parity \
-	         check_root_packages_minimal check_workflow_hardening; do \
+	         check_root_packages_minimal check_workflow_hardening \
+	         check_standards_matrix check_verified_markers \
+	         check_divergence_log check_baseline_manifests \
+	         check_unit_test_fixtures; do \
 		if [ -f "scripts/$$s.py" ]; then \
 			echo "  running scripts/$$s.py"; \
 			uv run python "scripts/$$s.py"; \
@@ -133,7 +136,7 @@ repo-checks:
 		fi; \
 	done; \
 	if [ "$$missing" -gt 0 ]; then \
-		echo "repo-checks: $$missing of 5 enforcement scripts are not written yet."; \
+		echo "repo-checks: $$missing of 10 enforcement scripts are not written yet."; \
 		echo "Waiver B-1 (Appendix D.1) covers the bootstrap interval."; \
 	fi
 

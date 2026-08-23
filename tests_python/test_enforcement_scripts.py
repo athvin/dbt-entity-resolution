@@ -18,16 +18,23 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import check_baseline_manifests  # noqa: E402
 import check_bouncer_ran  # noqa: E402
+import check_divergence_log  # noqa: E402
 import check_flags_parity  # noqa: E402
 import check_no_nondeterminism  # noqa: E402
 import check_root_packages_minimal  # noqa: E402
+import check_standards_matrix  # noqa: E402
+import check_unit_test_fixtures  # noqa: E402
+import check_verified_markers  # noqa: E402
 import check_workflow_hardening  # noqa: E402
 import check_yml_pairing  # noqa: E402
 
@@ -334,3 +341,365 @@ def test_bouncer_ran_rejects_a_missing_custom_check(tmp_path: Path) -> None:
 def test_bouncer_ran_rejects_a_missing_results_file(tmp_path: Path) -> None:
     errors = check_bouncer_ran.check(tmp_path / "nope.json")
     assert any("does not exist" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for the whole-repository checks.
+#
+# These four read the real tree rather than a synthetic one: 3.39 parses the
+# section 3 matrix, 3.44 the section 4 pin table, and a fabricated stand-in
+# would test the fabrication. So each test mirrors the repository into tmp_path
+# and injects one defect -- the same shape as `verify_gates.py`, one layer down.
+# ---------------------------------------------------------------------------
+
+_MIRROR = (
+    "docs",
+    "scripts",
+    "models",
+    "dbt-bouncer.yml",
+    "uv.lock",
+    ".pre-commit-config.yaml",
+    ".sqlfluff",
+    "integration_tests",
+)
+
+
+def _mirror(tmp_path: Path) -> Path:
+    """Copy the parts of the repository the whole-tree checks read."""
+    scratch = tmp_path / "repo"
+    scratch.mkdir()
+    for name in _MIRROR:
+        src = ROOT / name
+        if not src.exists():
+            continue
+        if src.is_dir():
+            shutil.copytree(
+                src,
+                scratch / name,
+                ignore=shutil.ignore_patterns(
+                    "target", "dbt_packages", "__pycache__", "*.duckdb", "logs"
+                ),
+            )
+        else:
+            shutil.copy2(src, scratch / name)
+    return scratch
+
+
+def _write_log(scratch: Path, body: str) -> None:
+    log = scratch / "docs" / "divergence-log.md"
+    log.write_text(body, encoding="utf-8")
+    _drop_pending(scratch, "docs/divergence-log.md")
+
+
+def _drop_pending(scratch: Path, path: str) -> None:
+    """Remove a pending entry, since the subject now exists."""
+    reg = scratch / "scripts" / "pending_subjects.yml"
+    lines = reg.read_text(encoding="utf-8").splitlines(keepends=True)
+    out, skip = [], False
+    for line in lines:
+        if line.startswith(f"  - path: {path}"):
+            skip = True
+            continue
+        if skip and (line.startswith("  - ") or not line.strip()):
+            skip = False
+        if not skip:
+            out.append(line)
+    reg.write_text("".join(out), encoding="utf-8")
+
+
+def _complete_manifest() -> dict[str, Any]:
+    return {
+        "splink_version": "4.0.16",
+        "model_json_sha256": "a" * 64,
+        "seed": 42,
+        "duckdb_version": "1.5.5",
+        "sqlglot_version": "30.17.0",
+        "platform": {"os": "linux", "architecture": "amd64", "duckdb_build": "v1.5.5"},
+        "date": "2026-08-23",
+        "producing_commit": "e3a9eb6",
+    }
+
+
+def _write_baseline(scratch: Path, manifest: dict[str, Any]) -> None:
+    baseline = scratch / "fixtures" / "fake_1000" / "edges.parquet"
+    baseline.parent.mkdir(parents=True, exist_ok=True)
+    baseline.write_text("not-really-parquet")
+    sidecar = baseline.with_suffix(baseline.suffix + ".manifest.yml")
+    sidecar.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    _drop_pending(scratch, "fixtures")
+
+
+# ---------------------------------------------------------------------------
+# 3.39 -- every mechanism the section 3 matrix names is real and wired up.
+# ---------------------------------------------------------------------------
+
+
+def test_standards_matrix_passes_on_the_real_repository() -> None:
+    assert check_standards_matrix.check(ROOT) == []
+
+
+def test_standards_matrix_rejects_a_script_that_does_not_exist(tmp_path: Path) -> None:
+    """The orphan-rule case: a row naming a mechanism nobody wrote."""
+    scratch = _mirror(tmp_path)
+    (scratch / "scripts" / "check_verified_markers.py").unlink()
+    errors = check_standards_matrix.check(scratch)
+    assert any("check_verified_markers.py" in e and "does not exist" in e for e in errors)
+
+
+def test_standards_matrix_rejects_an_unconfigured_bouncer_check(tmp_path: Path) -> None:
+    """A real dbt-bouncer check that the config never switches on."""
+    scratch = _mirror(tmp_path)
+    cfg = scratch / "dbt-bouncer.yml"
+    cfg.write_text(
+        cfg.read_text().replace(
+            "  - name: check_model_has_tests_by_type\n    min_number_of_schema_tests: 1\n", ""
+        )
+    )
+    errors = check_standards_matrix.check(scratch)
+    assert any("check_model_has_tests_by_type" in e and "EXISTS" in e for e in errors)
+
+
+def test_standards_matrix_refuses_to_pass_when_the_parser_breaks(tmp_path: Path) -> None:
+    """A parser matching nothing exits 0 and reads as a pass -- the D.0 finding 20 shape."""
+    scratch = _mirror(tmp_path)
+    doc = scratch / "docs" / "DbtBestPractices.md"
+    doc.write_text(doc.read_text().replace("| 3.", "| x3."))
+    errors = check_standards_matrix.check(scratch)
+    assert any("extractor has broken" in e for e in errors)
+
+
+def test_standards_matrix_rejects_a_stale_pending_entry(tmp_path: Path) -> None:
+    """Rule 2: an entry must not outlive the gap it records."""
+    scratch = _mirror(tmp_path)
+    reg = scratch / "scripts" / "pending_subjects.yml"
+    reg.write_text(reg.read_text().replace('- standard: "3.60"', '- standard: "3.1"'))
+    errors = check_standards_matrix.check(scratch)
+    assert any("3.1" in e and "now resolves" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# 3.44 -- a [VERIFIED] marker is scoped to a toolchain and expires with it.
+# ---------------------------------------------------------------------------
+
+
+def test_verified_markers_pass_on_the_real_repository() -> None:
+    assert check_verified_markers.check(ROOT) == []
+
+
+def test_verified_markers_demotes_on_a_moved_pin(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    doc = scratch / "docs" / "DbtBestPractices.md"
+    doc.write_text(doc.read_text().replace("yamllint 1.38.0 ·", "yamllint 1.37.0 ·"))
+    errors = check_verified_markers.check(scratch)
+    assert any("DEMOTED" in e and "yamllint" in e for e in errors)
+
+
+def test_verified_markers_rejects_a_marker_with_no_scope(tmp_path: Path) -> None:
+    """The subtle case: a marker naming no toolchain can never expire."""
+    scratch = _mirror(tmp_path)
+    doc = scratch / "docs" / "DbtBestPractices.md"
+    doc.write_text(doc.read_text().replace(" · ruff 0.16.4", ""))
+    errors = check_verified_markers.check(scratch)
+    assert any("ruff" in e and "does not name it" in e for e in errors)
+
+
+def test_verified_markers_rejects_a_pin_the_lock_disagrees_with(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    doc = scratch / "docs" / "DbtBestPractices.md"
+    doc.write_text(doc.read_text().replace("| duckdb | `==1.5.5`", "| duckdb | `==1.5.4`"))
+    errors = check_verified_markers.check(scratch)
+    assert any("pin and the lock disagree" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# 3.49 / 3.50 -- divergences and parity claims, in both directions.
+# ---------------------------------------------------------------------------
+
+
+def test_divergence_log_passes_on_the_real_repository() -> None:
+    assert check_divergence_log.check(ROOT) == []
+
+
+def test_divergence_log_rejects_a_pinned_but_unlogged_divergence(tmp_path: Path) -> None:
+    """The reverse direction -- behaviour frozen with no record of why."""
+    scratch = _mirror(tmp_path)
+    test = scratch / "tests" / "divergence" / "test_div_99.sql"
+    test.parent.mkdir(parents=True)
+    test.write_text("-- DIV-99\nselect 1\n")
+    errors = check_divergence_log.check(scratch)
+    assert any("DIV-99" in e and "pinned and unrecorded" in e for e in errors)
+
+
+def test_divergence_log_rejects_an_entry_with_no_pinning_test(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    _write_log(scratch, "## DIV-01 - a divergence\n\nSome prose and no test.\n")
+    errors = check_divergence_log.check(scratch)
+    assert any("DIV-01" in e and "no `Pinning test:` line" in e for e in errors)
+
+
+def test_divergence_log_rejects_a_one_way_link(tmp_path: Path) -> None:
+    """The test exists but never cites the entry, so renaming breaks it silently."""
+    scratch = _mirror(tmp_path)
+    test = scratch / "tests" / "divergence" / "test_div_01.sql"
+    test.parent.mkdir(parents=True)
+    test.write_text("select 1 as no_citation_here\n")
+    _write_log(
+        scratch,
+        "## DIV-01 - a divergence\n\nPinning test: `tests/divergence/test_div_01.sql`\n",
+    )
+    errors = check_divergence_log.check(scratch)
+    assert any("does not cite" in e for e in errors)
+
+
+def test_divergence_log_accepts_a_complete_pair(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    test = scratch / "tests" / "divergence" / "test_div_01.sql"
+    test.parent.mkdir(parents=True)
+    test.write_text("-- DIV-01: pinned here.\nselect 1\n")
+    _write_log(
+        scratch,
+        "## DIV-01 - a divergence\n\nPinning test: `tests/divergence/test_div_01.sql`\n",
+    )
+    assert check_divergence_log.check(scratch) == []
+
+
+def test_divergence_log_rejects_an_undeclared_missing_parity_file(tmp_path: Path) -> None:
+    """3.50: absence must be declared, never silent."""
+    scratch = _mirror(tmp_path)
+    reg = scratch / "scripts" / "pending_subjects.yml"
+    reg.write_text(reg.read_text().replace("  - path: PARITY.md\n", "  - path: PARITY.disabled\n"))
+    errors = check_divergence_log.check(scratch)
+    assert any("not declared pending (3.50" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# 3.62 -- a baseline without provenance is a number nobody can reproduce.
+# ---------------------------------------------------------------------------
+
+
+def test_baseline_manifests_pass_on_the_real_repository() -> None:
+    assert check_baseline_manifests.check(ROOT) == []
+
+
+def test_baseline_manifests_rejects_a_baseline_with_no_sidecar(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    baseline = scratch / "fixtures" / "fake_1000" / "edges.parquet"
+    baseline.parent.mkdir(parents=True)
+    baseline.write_text("not-really-parquet")
+    errors = check_baseline_manifests.check(scratch)
+    assert any("no sidecar at" in e for e in errors)
+
+
+@pytest.mark.parametrize("field", ["sqlglot_version", "platform", "producing_commit", "seed"])
+def test_baseline_manifests_rejects_each_missing_field(tmp_path: Path, field: str) -> None:
+    """Section 20.1's fields, each absent in turn."""
+    scratch = _mirror(tmp_path)
+    manifest = _complete_manifest()
+    del manifest[field]
+    _write_baseline(scratch, manifest)
+    errors = check_baseline_manifests.check(scratch)
+    assert any(field in e for e in errors)
+
+
+def test_baseline_manifests_rejects_an_incomplete_platform_triple(tmp_path: Path) -> None:
+    """G5: a manifest that cannot say which platform produced a baseline."""
+    scratch = _mirror(tmp_path)
+    manifest = _complete_manifest()
+    del manifest["platform"]["architecture"]
+    _write_baseline(scratch, manifest)
+    errors = check_baseline_manifests.check(scratch)
+    assert any("architecture" in e for e in errors)
+
+
+def test_baseline_manifests_rejects_a_truncated_hash(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    manifest = _complete_manifest()
+    manifest["model_json_sha256"] = "abc123"
+    _write_baseline(scratch, manifest)
+    errors = check_baseline_manifests.check(scratch)
+    assert any("truncated hash" in e for e in errors)
+
+
+def test_baseline_manifests_accepts_a_complete_sidecar(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    _write_baseline(scratch, _complete_manifest())
+    assert check_baseline_manifests.check(scratch) == []
+
+
+def test_baseline_manifests_rejects_an_empty_fixtures_directory(tmp_path: Path) -> None:
+    """An empty walk exits 0 and reads as a pass."""
+    scratch = _mirror(tmp_path)
+    (scratch / "fixtures").mkdir()
+    errors = check_baseline_manifests.check(scratch)
+    assert any("contains no baselines" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# 3.69 -- fixture types are declared, never inferred.
+# ---------------------------------------------------------------------------
+
+
+def test_unit_test_fixtures_pass_on_the_real_repository() -> None:
+    assert check_unit_test_fixtures.check(ROOT) == []
+
+
+def test_unit_test_fixtures_rejects_format_dict(tmp_path: Path) -> None:
+    """Section 12.2's measured case: agate read DATE from "not-a-date"."""
+    scratch = _mirror(tmp_path)
+    yml = scratch / "models" / "intermediate" / "er_thresholds.yml"
+    yml.write_text(yml.read_text().replace("      format: sql", "      format: dict", 1))
+    errors = check_unit_test_fixtures.check(scratch)
+    assert any("Only `format: sql` is permitted" in e for e in errors)
+
+
+def test_unit_test_fixtures_rejects_an_uncast_column(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    yml = scratch / "models" / "intermediate" / "er_thresholds.yml"
+    yml.write_text(
+        yml.read_text().replace("cast(0.9 as double) as thr_auto_merge", "0.9 as thr_auto_merge", 1)
+    )
+    errors = check_unit_test_fixtures.check(scratch)
+    assert any("thr_auto_merge" in e and "without an explicit" in e for e in errors)
+
+
+def test_unit_test_fixtures_rejects_a_missing_format(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    yml = scratch / "models" / "intermediate" / "er_thresholds.yml"
+    yml.write_text(yml.read_text().replace("      format: sql\n", "", 1))
+    errors = check_unit_test_fixtures.check(scratch)
+    assert any("declares no `format`" in e for e in errors)
+
+
+def test_unit_test_fixtures_rejects_select_star(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    yml = scratch / "models" / "intermediate" / "er_thresholds.yml"
+    body = yml.read_text().replace(
+        "        select\n            cast(0.9 as double) as thr_auto_merge,\n"
+        "            cast(0.9 as double) as thr_review_low",
+        "        select * from somewhere",
+        1,
+    )
+    yml.write_text(body)
+    errors = check_unit_test_fixtures.check(scratch)
+    assert any("select *" in e for e in errors)
+
+
+def test_unit_test_fixtures_rejects_a_nested_unit_tests_block(tmp_path: Path) -> None:
+    """3.72 / D.0 finding 4: dbt ignores a nested block silently -- exit 0, no warning."""
+    scratch = _mirror(tmp_path)
+    yml = scratch / "models" / "intermediate" / "er_thresholds.yml"
+    text = yml.read_text()
+    head, marker, tail = text.partition("unit_tests:")
+    nested = "\n".join(f"    {ln}" if ln.strip() else ln for ln in (marker + tail).split("\n"))
+    yml.write_text(head.rstrip("\n") + "\n" + nested)
+    errors = check_unit_test_fixtures.check(scratch)
+    assert any("nested `unit_tests:` key" in e for e in errors)
+
+
+def test_standards_matrix_rejects_an_injection_with_no_matrix_row(tmp_path: Path) -> None:
+    """The reverse direction: enforced, and documented nowhere."""
+    scratch = _mirror(tmp_path)
+    doc = scratch / "docs" / "DbtBestPractices.md"
+    doc.write_text(doc.read_text().replace("| 3.72 |", "| 3.972 |", 1))
+    errors = check_standards_matrix.check(scratch)
+    assert any("3.72" in e and "no row" in e for e in errors)
