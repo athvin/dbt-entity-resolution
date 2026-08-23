@@ -1,0 +1,141 @@
+[sqlfluff]
+dialect = duckdb
+templater = dbt
+
+# Stated explicitly so NEW upstream rules are opt-OUT. A new rule breaking the
+# build on a version bump is the intended signal, not noise.
+rules = all
+
+# ST06 (structure.column_order) -- column order is dictated by the model JSON and
+#      must stay stable for parity diffing; a linter reordering it changes the contract.
+# LT09 (layout.select_targets) -- reflows select lists, fighting the {% for %} loops
+#      that emit the gamma_/bf_ column families.
+exclude_rules = ST06, LT09
+
+max_line_length = 100
+processes = 0
+
+# Lints hand-written literal SQL; violations INSIDE templated regions are suppressed.
+# This suppresses VIOLATIONS only -- every byte of rendered SQL must still lex and
+# parse, so a macro emitting malformed SQL still fails.
+ignore_templated_areas = True
+
+# Nothing is ever silently skipped. A skipped file reporting success is the worst
+# outcome a lint gate can produce.
+fix_even_unparsable = False
+large_file_skip_byte_limit = 0
+large_file_skip_char_limit = 0
+disable_noqa = False
+warn_unused_ignores = True
+
+[sqlfluff:templater:dbt]
+project_dir = ./
+profiles_dir = ./profiles
+profile = dbt_er
+target = ci
+
+# There is deliberately NO [sqlfluff:templater:dbt:context] block. This file is
+# parsed as INI, so a section holds flat scalars only -- a nested Splink
+# `comparisons: [{...}]` cannot survive it. The model JSON reaches the templater
+# through DBT_ER_MODEL_JSON in the environment plus the `vars:` defaults in
+# dbt_project.yml, so a bare `sqlfluff lint` works with no setup.
+#
+# NOTE (2026-08-23): er_thresholds now has NO default in dbt_project.yml -- see
+# DesignDoc 1.8, where the removed default is shown to cost ~330 true pairs. A
+# bare `sqlfluff lint` therefore needs DBT_ER_THRESHOLDS_ARG in the environment,
+# which `make lint` supplies. This is the cost of that decision, paid here.
+
+[sqlfluff:indentation]
+indent_unit = space
+tab_space_size = 4
+indented_joins = False
+indented_ctes = False
+indented_using_on = True
+template_blocks_indent = True
+
+[sqlfluff:layout:type:comma]
+line_position = trailing
+[sqlfluff:layout:type:binary_operator]
+line_position = leading
+[sqlfluff:layout:type:set_operator]
+line_position = alone:strict
+
+# ---- capitalisation: lowercase everything, no exceptions -------------------
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = lower
+[sqlfluff:rules:capitalisation.types]
+extended_capitalisation_policy = lower
+
+# ---- aliasing --------------------------------------------------------------
+[sqlfluff:rules:aliasing.table]
+aliasing = explicit
+[sqlfluff:rules:aliasing.column]
+aliasing = explicit
+[sqlfluff:rules:aliasing.length]
+# `l` and `r` are the canonical left/right aliases in every pairwise model and
+# match Splink's own column suffixes, so a minimum length would fight the domain.
+min_alias_length = None
+max_alias_length = 30
+[sqlfluff:rules:aliasing.forbid]
+# AL07 stays OFF: this project REQUIRES l/r aliases on self-joins.
+force_enable = False
+
+# ---- ambiguity: the determinism core ---------------------------------------
+# AM03 (explicit ASC/DESC), AM04 (bans SELECT *), AM08 (implicit cross join -- a
+# free pair-explosion guard) and AM09 (LIMIT without ORDER BY) take no options
+# and are already on via `rules = all`.
+[sqlfluff:rules:ambiguous.join]
+fully_qualify_join_types = both
+[sqlfluff:rules:ambiguous.column_references]
+# Bans ordinal `group by 1, 2`: a column reordering silently changes the query.
+group_by_and_order_by_style = explicit
+
+# ---- references ------------------------------------------------------------
+# RF01 (references.from) is disabled by default FOR DUCKDB BY NAME upstream --
+# structs and lateral references cause false positives -- so it is deliberately
+# not force-enabled here.
+[sqlfluff:rules:references.consistent]
+single_table_references = qualified
+[sqlfluff:rules:references.keywords]
+unquoted_identifiers_policy = aliases
+quoted_identifiers_policy = none
+
+# ---- conventions -----------------------------------------------------------
+[sqlfluff:rules:convention.not_equal]
+preferred_not_equal_style = c_style
+[sqlfluff:rules:convention.select_trailing_comma]
+select_clause_trailing_comma = forbid
+[sqlfluff:rules:convention.terminator]
+# dbt wraps every model in a CTAS, so a trailing semicolon is a syntax error.
+require_final_semicolon = False
+[sqlfluff:rules:convention.casting_style]
+# CAST(x AS t) is greppable in a way that `::` is not.
+preferred_type_casting_style = cast
+[sqlfluff:rules:convention.quoted_literals]
+force_enable = True
+preferred_quoted_literal_style = single_quotes
+
+# Non-determinism ban list: anything here makes two runs of identical input differ.
+# `using sample` is deliberately NOT blocked -- DesignDoc D9 REQUIRES
+# `USING SAMPLE bernoulli(x%) REPEATABLE(seed)` for reproducible u-estimation.
+[sqlfluff:rules:convention.blocked_words]
+blocked_words = random,now,current_timestamp,current_date,current_time,current_localtime,current_localtimestamp,gen_random_uuid,uuid,uuidv4,uuidv7,nextval,setseed,random_string,txid_current,transaction_timestamp
+
+# ---- structure -------------------------------------------------------------
+[sqlfluff:rules:structure.subquery]
+# Force named, diffable CTEs. A parity diff against Splink is read by humans.
+#
+# BLOCKED ON B.8 / DR-23. Section 11.1 concedes that er_int_scored_pairs cannot
+# satisfy this, section 7.3's CTE ban and float parity's rejection of a repeated
+# expression all at once. Stage 0.8's EXPLAIN ANALYZE spike decides which gives;
+# until then this stays at `both` and Stage 5 is blocked, which is the honest
+# state rather than pre-emptively relaxing it.
+forbid_subquery_in = both
+[sqlfluff:rules:structure.join_condition_order]
+preferred_first_table_in_join_clause = earlier

@@ -68,6 +68,25 @@ target-version = "py312"
 line-length = 100
 src = ["scripts", "dbt_bouncer_checks", "harness", "tests_python"]
 
+# 3.34's subject is THIS PACKAGE's Python: the enforcement scripts, the custom
+# bouncer checks, the harness, and their tests. `.claude/skills/` is operational
+# tooling that arrived with the repository and is maintained elsewhere;
+# reformatting it would produce a diff against its source with no owner, and
+# 3.57's "every script ships a failing-case test" is not a claim anyone made
+# about it.
+exclude = [
+    ".claude",
+    # ruff formats Python fenced blocks inside Markdown. The blocks in these
+    # documents are QUOTED EVIDENCE -- dbt-duckdb's CONSTRAINT_SUPPORT read from
+    # source, section 11.3's constants, C.4's as-executed macro -- and section 0
+    # is explicit that a [VERIFIED] block is "reproduced as executed". A
+    # formatter silently rewriting one destroys the only thing section 0 says
+    # the document must not smooth away. Found when `ruff format` realigned
+    # section 8.2's dict.
+    "docs/**/*.md",
+    "*.md",
+]
+
 [tool.ruff.lint]
 # 3.34. `select = ALL` and then argue with individual rules in writing, rather
 # than curating an allowlist nobody can audit.

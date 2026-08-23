@@ -1,0 +1,54 @@
+---
+# 3.18 / section 11.4. Two rules carry the weight; the rest is house style.
+#
+#   empty-values   -- section 10.4 calls this "the gate contracts cannot
+#                     provide": a `description:` with nothing after it is
+#                     structurally valid YAML and passes every dbt check, and
+#                     it is exactly how an undocumented column gets past 3.4.
+#   key-duplicates -- a duplicated key silently wins, and in a properties file
+#                     that means one column's contract quietly replacing
+#                     another's.
+extends: default
+
+rules:
+  empty-values:
+    forbid-in-block-mappings: true
+    forbid-in-flow-mappings: true
+  key-duplicates: enable
+
+  line-length:
+    max: 100
+    allow-non-breakable-words: true
+    # A long description is not a lint failure; a long *key* would be.
+    allow-non-breakable-inline-mappings: true
+
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+
+  # Deliberately OFF (section 11.4):
+  #   quoted-strings -- would fight the Jinja in `columns: "{{ var(...) }}"`,
+  #                     which section 9 shows is the ONLY way to contract a
+  #                     model whose column set comes from the model JSON.
+  #   braces (forbid) -- same reason; flow mappings appear inside Jinja.
+  quoted-strings: disable
+  braces:
+    forbid: false
+    min-spaces-inside: 0
+    max-spaces-inside: 1
+
+  truthy:
+    # `on:` in a GitHub workflow is a key, not a boolean.
+    check-keys: false
+
+ignore: |
+  # dbt WRITES these. `dbt deps --lock` regenerates them without a document
+  # start, and `git diff --exit-code` on them is a CI gate (section 16) -- so
+  # hand-editing one to satisfy a linter would break the gate that matters.
+  package-lock.yml
+  integration_tests/package-lock.yml
+  target/
+  dbt_packages/
+  integration_tests/target/
+  integration_tests/dbt_packages/
+  .venv/

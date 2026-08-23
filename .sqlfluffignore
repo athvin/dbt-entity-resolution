@@ -1,0 +1,32 @@
+target/
+dbt_packages/
+integration_tests/target/
+integration_tests/dbt_packages/
+logs/
+.venv/
+harness/
+fixtures/
+exports/
+macros/          # performance only: the dbt templater already skips macro files
+
+# ---- TRACKED EXEMPTIONS ----------------------------------------------------
+# No USING KEY grammar in SQLFluff 4.3.0's duckdb dialect. A pre-commit hook and
+# a CI step assert this list never exceeds two model entries. Delete when the
+# upstream grammar lands.
+#
+# Rejected alternatives: `warnings = PRS` and `ignore = parsing` are GLOBAL and
+# would hide every parse error project-wide; a per-file `-- noqa-file` hides
+# genuine parse errors inside that file and is trivially copy-pasted onward.
+#
+# 11.2 delta 1 (RC41): er_int_em_iterations named no model in either document --
+# it is the pre-D5 unrolled design D5 explicitly killed, and the real EM model
+# would have raised PRS unexempted while the dead entry consumed a capped slot.
+# 11.2 delta 2: the <= 2 cap survives the inventory now that
+# er_entity_clusters_1to1 is tagged v2 (section 5 Stage 6).
+#
+# NEITHER MODEL EXISTS YET. Both lines are commented until the model they name
+# is written -- an exemption for a file that does not exist is the same vacuous
+# pass 6.1 diagnoses in check_yml_pairing.py's seed clause, and it would make
+# the <= 2 cap assert against nothing.
+# models/marts/er_entity_clusters.sql
+# models/intermediate/er_train_em.sql

@@ -3692,6 +3692,45 @@ dbt-core 1.12.2 · dbt-duckdb 1.11.0 · DuckDB 1.5.5 · Python 3.12.13 · macOS 
    is a concrete mechanism for §15's existing *"do not cache `target/`"* rule, which previously rested on
    the milder argument about stale databases.
 
+#### Step 2–3 (the local gate loop), same day
+
+Four more, from writing the `Makefile` and the lint configs:
+
+7. **SQLFluff has no `--vars`, and §11.1's "a bare `sqlfluff lint` works with no setup" depended on a
+   default that DR-22 removed.** §11.1 reasons that the model JSON reaches the templater through
+   `DBT_ER_MODEL_JSON` *"plus the `vars:` defaults in `dbt_project.yml`"* — and `er_thresholds` no longer has
+   one, because §1.8 shows the default it had cost ~330 true pairs. **Fix:** route the threshold through the
+   environment as a JSON string, exactly as D1 already does for the model JSON. The property §11.1 wanted is
+   restored without restoring a default nobody justified.
+8. **dbt renders a Jinja-bearing `vars:` value to a *string*.** `er_thresholds: "{{ fromjson(env_var(…)) }}"`
+   yields the string *representation* of a list, and iterating it yields characters. **Structure cannot
+   survive the `vars:` block**, so a structured value supplied through the environment must be parsed at the
+   point of use. This is D1's constraint generalised beyond the model JSON, and it is worth stating once
+   rather than rediscovering per var. Models therefore accept **both** a native list and a JSON string.
+9. **`ruff format` reformats Python fenced blocks inside these Markdown documents.** It realigned §8.2's
+   `CONSTRAINT_SUPPORT` dict — which is **read from `dbt/adapters/duckdb/impl.py`** — and §11.3's constants.
+   §0 is explicit that a `[VERIFIED]` block is *"reproduced as executed"*; a formatter silently rewriting one
+   destroys the only thing §0 says the document must not smooth away. **`docs/**/*.md` is excluded from ruff**,
+   and the exclusion carries its reason.
+10. **§17's `make lint` names a path that does not exist in a fresh scaffold.** `sqlfluff lint models tests`
+    errors with *"Specified path does not exist"* while `tests/` holds no singular tests. The target now
+    names the paths conditionally and **says** it is linting models only — rather than `mkdir`-ing an empty
+    directory, which would give the gate a subject it cannot actually check.
+
+**Also observed, not a defect:** `template_blocks_indent = True` requires SQL inside a Jinja block to be
+indented one level relative to the tag, so the *rendered* SQL is indented. That is the shape every templated
+model must take, and it is cheaper to know now than to rediscover per model.
+
+#### What the local gate loop actually does now
+
+`make lint` (yamllint · ruff · mypy · `dbt parse` both roots · sqlfluff), `make build`
+(`--empty` contract smoke, then full) and `make docs` all pass. **`make bouncer` fails, correctly** — it
+names C.5's lost text and exits non-zero rather than skipping. `make ci` therefore fails at the bouncer step,
+which is the honest state at D.1 step 3 and is what step 4 fixes.
+
+`repo-checks` reports **4 of 4 enforcement scripts missing** rather than passing quietly. Waiver B-1 covers
+the interval; the point of reporting is that the interval is visible.
+
 #### The standard finding 4 asks for
 
 > **3.72 — A `unit_tests:` block is at the top level of its properties file.** *Mechanism:*

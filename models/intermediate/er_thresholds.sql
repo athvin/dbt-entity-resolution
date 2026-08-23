@@ -15,7 +15,16 @@
   the lower threshold. A default nobody justified was silently choosing worse
   output on this project's own reference corpus. See 1.8.
 -#}
-{%- set thresholds = var('er_thresholds') -%}
+{#-
+  The var arrives either as a native list -- from a project's `vars:` block or
+  from --vars -- or as a JSON string, which is how it reaches the LINTER.
+  sqlfluff has no --vars, and dbt renders a Jinja-bearing `vars:` value to a
+  string, so a structured value supplied through the environment must be parsed
+  at the point of use. D1 does exactly this for the model JSON; section 11.1's
+  claim that "a bare `sqlfluff lint` works with no setup" depends on it.
+-#}
+{%- set raw = var('er_thresholds') -%}
+{%- set thresholds = fromjson(raw) if raw is string else raw -%}
 
 {%- if thresholds | length == 0 -%}
   {{ exceptions.raise_compiler_error(
@@ -28,22 +37,22 @@
 {%- endif -%}
 
 {%- for pair in thresholds -%}
-  {%- if 'auto_merge' not in pair -%}
-    {{ exceptions.raise_compiler_error(
-        "ER-011: er_thresholds[" ~ loop.index0 ~ "] has no 'auto_merge' key. "
-        ~ "Every entry needs one; 'review_low' is optional and defaults to it, "
-        ~ "which makes the gray band empty. See DesignDoc 1.7."
-    ) }}
-  {%- endif -%}
-  {%- if pair.get('review_low', pair['auto_merge']) > pair['auto_merge'] -%}
-    {{ exceptions.raise_compiler_error(
-        "ER-012: er_thresholds[" ~ loop.index0 ~ "] has review_low ("
-        ~ pair['review_low'] ~ ") above auto_merge (" ~ pair['auto_merge']
-        ~ "). The gray band is the half-open interval "
-        ~ "[review_low, auto_merge), so review_low <= auto_merge. "
-        ~ "See DesignDoc 1.7."
-    ) }}
-  {%- endif -%}
+    {%- if 'auto_merge' not in pair -%}
+        {{ exceptions.raise_compiler_error(
+            "ER-011: er_thresholds[" ~ loop.index0 ~ "] has no 'auto_merge' key. "
+            ~ "Every entry needs one; 'review_low' is optional and defaults "
+            ~ "to it, which makes the gray band empty. See DesignDoc 1.7."
+        ) }}
+    {%- endif -%}
+    {%- if pair.get('review_low', pair['auto_merge']) > pair['auto_merge'] -%}
+        {{ exceptions.raise_compiler_error(
+            "ER-012: er_thresholds[" ~ loop.index0 ~ "] has review_low ("
+            ~ pair['review_low'] ~ ") above auto_merge ("
+            ~ pair['auto_merge'] ~ "). The gray band is the half-open interval "
+            ~ "[review_low, auto_merge), so review_low <= auto_merge. "
+            ~ "See DesignDoc 1.7."
+        ) }}
+    {%- endif -%}
 {%- endfor -%}
 
 {#-
@@ -53,11 +62,11 @@
   what a threshold is. [RECON], Appendix A M16.
 -#}
 {% for pair in thresholds %}
-select
-    cast({{ pair['auto_merge'] }} as double) as thr_auto_merge,
-    cast({{ pair.get('review_low', pair['auto_merge']) }} as double)
-        as thr_review_low
-{%- if not loop.last %}
-union all
-{% endif %}
+    {%- if not loop.first %}
+    union all
+    {% endif %}
+    select
+        cast({{ pair['auto_merge'] }} as double) as thr_auto_merge,
+        cast({{ pair.get('review_low', pair['auto_merge']) }} as double)
+            as thr_review_low
 {%- endfor %}

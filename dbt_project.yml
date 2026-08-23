@@ -107,7 +107,19 @@ vars:
   # A default nobody justified was silently choosing worse output. See 1.8.
   #
   # review_low defaults to auto_merge per pair, making the gray band empty.
-  er_thresholds: []
+  #
+  # Routed through the ENVIRONMENT, not just `vars:`, for the same reason
+  # er_model is (section 9): sqlfluff has no --vars, so a value reachable only
+  # by --vars is a value the linter cannot see. Section 11.1 claimed "a bare
+  # `sqlfluff lint` works with no setup" on the strength of the default this
+  # var no longer has; the environment is what restores that property without
+  # restoring a default nobody justified.
+  # It is a JSON *string* here, not a list, and the model parses it. dbt renders
+  # a Jinja-bearing vars: value to a STRING, so structure cannot survive this
+  # block -- which is the same constraint D1 already works around for the model
+  # JSON, generalised. A YAML list supplied directly (as integration_tests/ does)
+  # is also accepted; the model handles both.
+  er_thresholds: "{{ env_var('DBT_ER_THRESHOLDS', '[]') }}"
 
   # From measured capacity, NOT Splink's per-rule max_rows_limit of 1e9 -- at the
   # measured 946 B/pair that limit would admit a 946 GB build (Appendix A, B1).
