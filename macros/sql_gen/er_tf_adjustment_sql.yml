@@ -1,0 +1,71 @@
+---
+version: 2
+
+macros:
+  - name: er_tf_divisor_sql
+    description: >
+      Section 3.2 correction 2: the divisor is `GREATEST(tf_l, tf_r)` expressed
+      as a CASE with mutual `coalesce` -- never `LEAST`, never
+      `coalesce(tf_l, tf_r)`. Splink deliberately uses the MORE COMMON term's
+      frequency, giving the smaller boost, so `LEAST` flips the direction on
+      every pair where the two sides differ. That is a systematic divergence,
+      not a floating-point one.
+
+
+      `tf_minimum_u_value` floors the divisor, capping the boost. It is OMITTED
+      from the JSON when 0, so it defaults to 0.0 and D1's validation must not
+      reject that as an out-of-range probability.
+
+    arguments:
+      - name: tf_left
+        type: string
+        description: The left term-frequency column expression.
+      - name: tf_right
+        type: string
+        description: The right term-frequency column expression.
+      - name: tf_minimum_u_value
+        type: float
+        description: Floor for the divisor. Defaults to 0.0 (i.e. no floor).
+
+  - name: er_tf_adjustment_sql
+    description: >
+      Section 3.2's `bf_tf_adj_<name>`: a SEPARATE MULTIPLICATIVE column, a CASE
+      covering every gamma value, with non-adjusted levels emitting
+      `cast(1 as float8)`.
+
+
+      v1 described a "`log2(tf_adjustment)` term with `tf_adjustment_weight`",
+      which is not the shape at all.
+
+
+      The numerator is the EXACT-MATCH level's `u`, not the level's own -- a
+      value that is NOT IN THE MODEL JSON. Splink resolves it by sqlglot CNF
+      analysis of sibling levels; this macro takes it from the A.2 sidecar,
+      which resolves it with Splink's own code.
+
+
+      A level emits the constant 1.0 when it is the null level, has no TF
+      column, has weight 0, or IS THE ELSE LEVEL -- detected by the sentinel,
+      not by `gamma == 0`. The NULL guard is
+      `coalesce(tf_l, tf_r) IS NOT NULL`, so the fallback applies only when
+      BOTH sides are NULL; with exactly one NULL the other is substituted and
+      the adjustment IS applied.
+
+
+      Verified bit-identical to Splink's own SQL over 1,507 rows including every
+      NULL combination (3.80).
+
+    arguments:
+      - name: output_column_name
+        type: string
+        description: The comparison's name; the emitted column is `bf_tf_adj_<name>`.
+      - name: levels
+        type: list
+        description: >
+          Levels in JSON order, merged with the sidecar's resolution
+          (`comparison_vector_value`, `is_null_level`, `tf_u_exact_match`).
+      - name: tf_column
+        type: string
+        description: >
+          The term-frequency column's base name, when it differs from the
+          comparison's name. Defaults to `output_column_name`.
