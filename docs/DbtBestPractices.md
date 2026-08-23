@@ -3414,6 +3414,18 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     would look tidier, change every weight in the last few bits, and quietly break the exact-equality gate
     every parity claim rests on.
 
+43. **A trap you cannot reconstruct is a trap you cannot re-verify.** Stage 0.5 set out to prove both of
+    D4's documented traps fire on the pinned DuckDB. The **monotone guard** was straightforward: remove
+    the `having` clause, run in a subprocess, watch it fail to converge. **v1's inverted driver was not.**
+    D4 describes it in prose — *"propagates the smaller component label across edges via the `recurring.`
+    pseudo-schema"* — and its decisive counter-recursion test has two substitution points whose full query
+    text the document records results for but never prints. A reconstruction from that description
+    **terminated in 0.5s**, which is a fact about the reconstruction and no evidence at all about v1.
+    Asserting on it would have manufactured confidence. The test was removed and the gap written down
+    instead. **The generalisable rule: when a document records a measurement's *result* but not the
+    *artefact* that produced it, the claim cannot be re-earned later** — which is §0's marker problem
+    wearing different clothes, and an argument for keeping the query next to the number.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`

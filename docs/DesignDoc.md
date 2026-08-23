@@ -1557,6 +1557,18 @@ worth stating twice:
 - 0.5 **Clustering spike — now resolved, retained as a regression gate.** The D4 formulation must
   reproduce a union-find partition on random, chain, and star graphs with recorded runtimes. This gate
   re-runs on every DuckDB bump.
+  **DONE 2026-08-23 (PC-6).** `harness/test_clustering_correctness.py`: 20 tests, D4's query against an
+  **independent union-find oracle** (a different algorithm on purpose — a second min-label fixpoint would
+  reproduce the same misunderstanding and agree with it), over 11 random graphs, a 120-chain and a
+  120-star, plus the degenerate shapes D4 names — singletons, an edge to an absent node, a NULL endpoint,
+  and the empty graph. **Label** equality, not partition equality (A.4 row 5). Runtimes recorded, never
+  asserted: a timing threshold on a shared runner is a flake generator.
+  **The monotone guard is verified load-bearing**, not believed: the unguarded form is run in a
+  subprocess and shown *not* to converge, because G13 measured that DuckDB 1.5.5 has **no statement
+  timeout**, so a hanging query cannot be bounded in SQL. **Not re-verified: v1's inverted-driver shape.**
+  D4 describes it in prose and its decisive counter-recursion test has two substitution points whose full
+  query text the document does not record; a reconstruction terminated in 0.5s, which is evidence about
+  the reconstruction and not about v1. That claim stays where D4 left it.
 - **0.6 Materialisation & capacity spike.** Measure bytes-per-pair for the fixture model and publish
   `er_max_pairs` from the measurement. ~~Decide `ephemeral` vs `table` per intermediate~~
   **[SUPERSEDED by D11]** — but the *measurement* stands and D11's follow-through requires it, because
