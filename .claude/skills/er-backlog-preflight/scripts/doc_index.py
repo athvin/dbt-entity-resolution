@@ -182,7 +182,7 @@ def parse_reviews(lines: list[str], doc: str) -> list[dict[str, Any]]:
     return rows
 
 
-def parse_stages(lines: list[str]) -> list[dict[str, Any]]:
+def parse_stages(lines: list[str], dr11_open: bool = True) -> list[dict[str, Any]]:
     """Section 5 stage headings merged with A.5 corrected-list rows."""
     body_start, body_end = _slice(lines, r"^## 5\. Staged plan", r"^## 6\. Verification")
     merged: dict[str, dict[str, Any]] = {}
@@ -220,14 +220,25 @@ def parse_stages(lines: list[str]) -> list[dict[str, Any]]:
         merged.values(),
         key=lambda s: (int(re.match(r"\d+", s["stage"]).group()), s["stage"]),  # type: ignore[union-attr]
     )
+    # While DR-11 is unresolved, section 5 and A.5 are two normative inventories and every
+    # row carries that warning. Once it closes, section 5 has absorbed A.5 and the same rows
+    # mean the opposite: A.5 is the evidence trail, not a competing list. Reading DR-11's
+    # live status keeps this caveat from outliving the conflict it describes.
     for entry in ordered:
-        entry["reconciliation"] = (
-            "body only — A.5 has no row"
-            if entry["a5_change"] is None
-            else "A.5 only — MISSING from normative section 5 (DR-11 / R3)"
-            if not entry["in_body_section_5"]
-            else "both — section 5 text may not reflect A.5's change (DR-11 / R3)"
-        )
+        if entry["a5_change"] is None:
+            entry["reconciliation"] = "body only — A.5 has no row"
+        elif not entry["in_body_section_5"]:
+            entry["reconciliation"] = (
+                "A.5 only — MISSING from normative section 5 (DR-11 / R3)"
+                if dr11_open
+                else "absorbed into section 5 (DR-11 CURRENT) — A.5 row retained as evidence"
+            )
+        else:
+            entry["reconciliation"] = (
+                "both — section 5 text may not reflect A.5's change (DR-11 / R3)"
+                if dr11_open
+                else "reconciled — section 5 is the inventory (DR-11 CURRENT); A.5 is evidence"
+            )
     return ordered
 
 
@@ -266,7 +277,8 @@ def build_index() -> dict[str, Any]:
     decisions = parse_decisions(design)
     opens = parse_open_decisions(practices)
     reviews = parse_reviews(design, "DesignDoc.md") + parse_reviews(practices, "DbtBestPractices.md")
-    stages = parse_stages(design)
+    dr11 = next((d for d in decisions if d["id"] == "DR-11"), None)
+    stages = parse_stages(design, dr11_open=dr11 is None or dr11["blocking"])
     standards = parse_standards(practices)
 
     return {
@@ -309,7 +321,11 @@ def render_text(index: dict[str, Any], sections: list[str]) -> str:
         out.append("## Decision register (DesignDoc B.3)")
         for d in index["decisions"]:
             flag = "!!" if d["blocking"] else ("? " if d["status"] == "OPEN" else "  ")
-            blocks = f"  blocks: {', '.join(d['blocks_stages'])}" if d["blocks_stages"] else ""
+            # `blocks_stages` is a scrape of every stage the row mentions, which is what
+            # `--stage N` filters on. Only a row that is actually blocking *blocks* them; a
+            # CURRENT row printing "blocks: ..." asserts the opposite of what it means.
+            label = "blocks" if d["blocking"] else "touches"
+            blocks = f"  {label}: {', '.join(d['blocks_stages'])}" if d["blocks_stages"] else ""
             out.append(f"{flag} {d['id']}  {d['status']:<11} {d['decision']}{blocks}")
             if d["blocking"] and d["notes"]:
                 out.append(f"       -> {d['notes']}")
@@ -318,7 +334,8 @@ def render_text(index: dict[str, Any], sections: list[str]) -> str:
         out.append("## Open decisions (DbtBestPractices Appendix B)")
         for o in index["opens"]:
             flag = "  " if o["resolved"] else "? "
-            blocks = f"  blocks: {', '.join(o['blocks_stages'])}" if o["blocks_stages"] else ""
+            label = "blocks" if not o["resolved"] else "touches"
+            blocks = f"  {label}: {', '.join(o['blocks_stages'])}" if o["blocks_stages"] else ""
             out.append(f"{flag} {o['id']}  {o['title']}{blocks}")
             if o["recommendation"]:
                 out.append(f"       rec: {o['recommendation']}")
