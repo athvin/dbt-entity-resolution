@@ -523,6 +523,18 @@ INJECTIONS: tuple[Injection, ...] = (
     ),
     Injection(
         standard="3.75",
+        what="smuggle a statement terminator through a BLOCKING RULE",
+        mutate="write:fixtures/model_jsons/hostile_rule.json:"
+        '{"blocking_rules_to_generate_predictions":'
+        '[{"blocking_rule":"l.\\"a\\" = r.\\"a\\"; drop table er_stg_input"}],'
+        '"comparisons":[{"output_column_name":"c","comparison_levels":'
+        '[{"sql_condition":"\\"a_l\\" = \\"a_r\\"","m_probability":0.9},'
+        '{"sql_condition":"ELSE"}]}]}',
+        command=("python", "scripts/er_sidecar.py", "fixtures/model_jsons/hostile_rule.json"),
+        expect="ER-0",
+    ),
+    Injection(
+        standard="3.75",
         what="put a non-deterministic function in a comparison level",
         mutate="write:fixtures/model_jsons/hostile.json:"
         '{"comparisons":[{"output_column_name":"c","comparison_levels":'

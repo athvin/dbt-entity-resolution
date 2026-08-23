@@ -503,3 +503,79 @@ def test_m13_rejects_a_probability_outside_the_unit_interval() -> None:
         {"sql_condition": '"a_l" = "a_r"', "u_probability": 1.5}, {"sql_condition": "ELSE"}
     )
     assert "ER-043" in _codes(raw)
+
+
+# ---------------------------------------------------------------------------
+# D.0 finding 81 -- the model JSON carries SQL in TWO places and §1.5 policed
+# one. Every payload below is rejected in a comparison level and was ACCEPTED
+# as a blocking rule until 2026-08-23.
+# ---------------------------------------------------------------------------
+
+HOSTILE_RULES = [
+    ("subquery", 'l."x" = (select max("y") from other_table)'),
+    ("statement terminator", 'l."x" = r."x"; drop table er_stg_input'),
+    ("non-deterministic", 'l."x" = r."x" and random() < 0.5'),
+    ("outside the D6 allow-list", 'l."x" = r."x" and read_csv_auto(\'/etc/passwd\') is not null'),
+]
+
+
+def _model_with_rule(rule: object) -> str:
+    return json.dumps(
+        {
+            "blocking_rules_to_generate_predictions": [{"blocking_rule": rule}],
+            "comparisons": [
+                {
+                    "output_column_name": "c",
+                    "comparison_levels": [
+                        {"sql_condition": '"a_l" = "a_r"', "m_probability": 0.9},
+                        {"sql_condition": "ELSE"},
+                    ],
+                }
+            ],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "payload", [payload for _, payload in HOSTILE_RULES], ids=[label for label, _ in HOSTILE_RULES]
+)
+def test_a_hostile_blocking_rule_is_rejected(payload: str) -> None:
+    """`blocking_rule` is interpolated into `er_blocking_sql` as `{{ rule }}`.
+
+    It is executed with the consumer's credentials -- exactly the threat DR-17
+    and G3 describe -- so it must clear the same boundary a comparison level
+    does. The hole was unreachable only because Stage 3 did not exist yet.
+    """
+    with pytest.raises(er_sidecar.ValidationError):
+        er_sidecar.validate(_model_with_rule(payload))
+
+
+def test_a_bare_string_blocking_rule_is_still_validated() -> None:
+    """Splink accepts a bare string as well as the `{blocking_rule, ...}` mapping.
+
+    Reading only the mapping shape would leave the other one unpoliced, which is
+    the same defect one level down.
+    """
+    raw = json.loads(_model_with_rule("placeholder"))
+    raw["blocking_rules_to_generate_predictions"] = ['l."x" = r."x"; drop table t']
+    with pytest.raises(er_sidecar.ValidationError):
+        er_sidecar.validate(json.dumps(raw))
+
+
+def test_an_unrecognised_blocking_rule_shape_is_not_silently_skipped() -> None:
+    """A shape the reader does not understand must not yield nothing.
+
+    Yielding nothing is how this field became unpoliced in the first place: the
+    walk simply never produced it, and a validator that inspects nothing passes
+    everything (§6.1).
+    """
+    for shape in (None, 42, {"not_blocking_rule": "x"}):
+        with pytest.raises(er_sidecar.ValidationError):
+            er_sidecar.validate(_model_with_rule(shape))
+
+
+def test_the_real_model_reports_both_counts() -> None:
+    """Coverage is reported, so "validated nothing" cannot look like "validated"."""
+    artefact = er_sidecar.validate(FROZEN.read_text(encoding="utf-8"))
+    assert artefact["levels_validated"] == 28
+    assert artefact["blocking_rules_validated"] == 4
