@@ -1,0 +1,175 @@
+---
+name: "dbt_er"
+version: "0.1.0"
+config-version: 2
+
+# Upper bound includes 2.0.0 so the package is not marked incompatible the day a
+# major lands. The EXACT runtime version is pinned in uv.lock; this range is the
+# compatibility contract offered to consumers.
+require-dbt-version: [">=1.10.0", "<3.0.0"]
+
+profile: "dbt_er"
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+analysis-paths: ["analyses"]
+# NOTE: setting docs-paths REPLACES the default (all resource paths) -- any
+# {% docs %} block outside these directories is silently dropped.
+docs-paths: ["models", "macros"]
+clean-targets: ["target", "dbt_packages"]
+
+# Consumers physically cannot ref() our staging/intermediate internals.
+restrict-access: true
+
+# ---------------------------------------------------------------------------
+# `flags:` are read ONLY from the INVOKED project. They do NOT reach consumers,
+# and do NOT apply when dbt is invoked from integration_tests/. This block MUST
+# stay identical to the one there -- scripts/check_flags_parity.py asserts it.
+# ---------------------------------------------------------------------------
+flags:
+  send_anonymous_usage_stats: false
+
+  # V2 syntax. The legacy include:/exclude: form raises WEOIncludeExcludeDeprecation,
+  # and with `error: all` that deprecation is itself an error.
+  warn_error_options:
+    error: all
+    warn: []
+    # dbt-core #11792 / #12574 are OPEN: validate_macro_args false-positives on
+    # custom generic tests. REMOVAL TRIGGER: delete once #11792 ships.
+    silence: ["InvalidMacroAnnotation"]
+
+  # --- already true at 1.12.2; pinned so an upstream flip cannot loosen us ---
+  validate_macro_args: true
+  require_generic_test_arguments_property: true
+  require_all_warnings_handled_by_warn_error: true
+  require_resource_names_without_spaces: true
+  require_explicit_package_overrides_for_builtin_materializations: true
+  skip_nodes_if_on_run_start_fails: true
+  source_freshness_run_project_hooks: true
+  state_modified_compare_more_unrendered_values: true
+
+  # --- default false, flipped ON for maximum strictness ---
+  state_modified_compare_vars: true
+  require_unique_project_resource_names: true
+  require_ref_searches_node_package_before_root: true
+  require_valid_schema_from_generate_schema_name: true
+  require_sql_header_in_test_configs: true
+  require_corrected_analysis_fqns: true
+  require_source_and_semantic_model_names_without_spaces: true
+  require_event_names_in_deprecations: true
+
+  # --- left false ON PURPOSE: enabling these LOOSENS behaviour ---
+  allow_jinja_file_extensions: false
+  support_custom_ref_kwargs: false
+  use_catalogs_v2: false
+  latest_version_pointer_enabled_by_default: false
+
+vars:
+  # PRIMARY INGESTION PATH:
+  #   export DBT_ER_MODEL_JSON="$(cat fixtures/model_jsons/fake_1000_v1.json)"
+  # consumed as fromjson(env_var('DBT_ER_MODEL_JSON')). See section 9 for why
+  # env_var and not --vars, and section 1.5 for why an unvalidated JSON has no
+  # er_model_sha and therefore does not build.
+  er_model: {}
+
+  # Derived where er_model is emitted, NOT by a macro: the schema.yml context has
+  # no macros. Consumed as `columns: "{{ var('er_gamma_columns') }}"`.
+  er_gamma_columns: []
+  er_bf_columns: []
+  er_scored_pairs_columns: []
+  er_enforce_contracts: true
+
+  # ---- input contract (DesignDoc section 2.0, DR-16) ---------------------
+  # A relation EXPRESSION valid in a FROM clause: a qualified name, a view, or
+  # read_parquet(...). The package ships zero sources -- a source declared in a
+  # package forces its database and schema onto every consumer (M4b).
+  #
+  # No default. A relation name we invented would resolve to nothing or, worse,
+  # to something. The consumer also owns ORDERING: a relation name creates no
+  # DAG edge, so nothing here can guarantee the input exists before we read it.
+  er_input_relation: ""
+  # The declared input column set, as a parse-time var. D1's corollary applied
+  # to inputs: every column name is a pure function of the model JSON, derived
+  # at parse time, never introspected.
+  er_input_columns: []
+
+  # ---- thresholds (DesignDoc section 1.7, DR-08 / DR-09) -----------------
+  # C.1 delta 12. A list of {auto_merge, review_low} pairs, NOT a bare list of
+  # numbers and NOT a single var. Stage 6's AC needs three thresholds at once,
+  # and cross-threshold monotonicity is not expressible as a dbt test when the
+  # partitions never coexist in one build.
+  #
+  # NO DEFAULT, deliberately. [RECON] on the improved fixture model: F1 peaks at
+  # 0.9809 at t=0.5 and falls to 0.9219 at t=0.9 -- the value section 8's own DoD
+  # used as its example -- costing ~330 true pairs for ZERO precision benefit.
+  # A default nobody justified was silently choosing worse output. See 1.8.
+  #
+  # review_low defaults to auto_merge per pair, making the gray band empty.
+  er_thresholds: []
+
+  # From measured capacity, NOT Splink's per-rule max_rows_limit of 1e9 -- at the
+  # measured 946 B/pair that limit would admit a 946 GB build (Appendix A, B1).
+  # C.1 delta 3: this literal is re-derived by Stage 0.6's measurement, which
+  # owns it. It is provisional until then.
+  er_max_pairs: 42000000
+
+  # ---- quality floors (DesignDoc section 1.8, DR-22) ---------------------
+  # C.1 delta 13. Committed per fixture, set at Stage 0.4 from the FIXED model,
+  # and owned via CODEOWNERS -- a floor anybody can lower to make CI green is
+  # not a floor. Empty until Stage 0.4 measures them; Stage 0.4 cannot complete
+  # without them.
+  er_blocking_recall_floor: {}
+  er_f1_floor: {}
+  er_max_cluster_size: {}
+
+  # ---- policy knobs. Raising any of these is a reviewable act -------------
+  # NOTE the split (section 2.1, C.1 delta 10, RC48): these are POLICY vars and
+  # are meant to be overridable. The HARDENING values --
+  # er_allowed_materializations, er_must_carry_constraints and the exemption
+  # mapping -- are NOT here. They live in a package-owned macro that root
+  # configuration cannot reach, because a consumer setting
+  # er_allowed_materializations: ["view"] would render every DDL constraint in
+  # the project inert while their build stayed green.
+  er_min_model_description_chars: 40
+  er_min_column_description_chars: 10
+
+  # ---- observability: OFF by default. A package's on-run-end hook fires in
+  # every consumer's project and dbt-core #10592 is still open.
+  er_obs_enabled: false
+  er_obs_database: "obs"
+  er_obs_schema: "er_meta"
+
+models:
+  dbt_er:
+    # C.1 delta 9: dbt_er_enabled -> er_enabled (section 10.5, 3.33).
+    +enabled: "{{ var('er_enabled', true) }}"
+    +schema: entity_resolution
+    +materialized: table
+    +contract:
+      enforced: true
+      alias_types: false      # native DuckDB types; no adapter remapping
+    +persist_docs:
+      relation: true
+      columns: true
+    +group: er_core
+    +access: private
+
+    # Only layers that CURRENTLY contain models are configured. `error: all`
+    # turns dbt's "unused configuration paths" warning into a build failure, so a
+    # block for a directory that does not exist yet is itself an error. Add each
+    # layer's block in the same commit as its first model.
+    intermediate:
+      +tags: ["parity"]
+
+# NOTE: the data_tests: block is NOT here. C.1 delta 11 moves it to
+# integration_tests/dbt_project.yml -- store_failures_as: table in a PACKAGE
+# materialises 500 rows of person data into every consumer's warehouse (12.5,
+# 3.52).
+
+# NOTE: on-run-start is NOT here yet. It lands with
+# macros/quality/er_assert_project_standards.sql in step 4 of Appendix D.1's
+# bootstrap order. A hook pointing at a macro that does not exist fails parse;
+# a hook pointing at a macro that checks nothing is worse, because it looks
+# like a gate.

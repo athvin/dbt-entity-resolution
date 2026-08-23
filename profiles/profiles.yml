@@ -1,0 +1,63 @@
+---
+# Checked in: DuckDB is an in-process file, so there are no secrets here.
+#
+# THE FILE PATH IS DELIBERATE (B.1 / DR-13, resolved 2026-08-23), not inherited.
+# Do NOT switch this to ':memory:' without reopening B.1: CI runs five separate
+# dbt invocations (seed, build --empty, build, run-operation, docs generate),
+# an in-memory database does not survive between processes, and `dbt docs
+# generate` would build catalog.json against an EMPTY database -- leaving
+# dbt-bouncer's whole catalog tier passing over nothing.
+#
+# The property B.1 needed is that the HARNESS never opens this file. That is
+# provided by exporting every compared model to parquet from integration_tests/,
+# not by making the database not exist.
+dbt_er:
+  target: ci
+  outputs:
+
+    # ci -- the ONLY target whose determinism guarantees hold.
+    ci:
+      type: duckdb
+      path: "{{ env_var('DBT_ER_DB_PATH', 'target/dbt_er.duckdb') }}"
+      schema: main
+      # dbt-level threads. dbt-duckdb keeps ONE process-wide connection and
+      # hands each dbt thread a cursor, so this and DuckDB's own `threads`
+      # setting below are different knobs and must not be conflated (M17 rec b).
+      threads: 1
+      extensions:
+        - json
+      retries:
+        connect_attempts: 5
+        query_attempts: 3
+        retryable_exceptions:
+          - "IOException"
+      settings:
+        # LOCAL setting. 'no_output' collects timings without writing a file.
+        enable_profiling: "no_output"
+        profiling_mode: "standard"
+        # DuckDB's own parallelism, distinct from `threads:` above. The
+        # determinism gate runs at 8, never 1 (section 13.2).
+        threads: "{{ env_var('DBT_ER_DUCKDB_THREADS', '8') }}"
+        memory_limit: "{{ env_var('DBT_ER_MEMORY_LIMIT', '8GB') }}"
+        temp_directory: "{{ env_var('DBT_ER_TEMP_DIR', 'target/.duckdb_tmp') }}"
+        max_temp_directory_size: "8GiB"
+        # preserve_insertion_order is deliberately NOT set: section 13 requires
+        # output stability after canonical ordering, not insertion order.
+
+    # bench -- performance measurement only.
+    # DETERMINISM GUARANTEES DO NOT APPLY HERE.
+    bench:
+      type: duckdb
+      path: "{{ env_var('DBT_ER_DB_PATH', 'target/dbt_er_bench.duckdb') }}"
+      schema: main
+      threads: 1
+      extensions:
+        - json
+      settings:
+        enable_profiling: "no_output"
+        profiling_mode: "detailed"
+        threads: "{{ env_var('DBT_ER_DUCKDB_THREADS', '8') }}"
+        memory_limit: "12GB"
+        temp_directory: "{{ env_var('DBT_ER_TEMP_DIR', 'target/.duckdb_tmp') }}"
+        max_temp_directory_size: "16GiB"
+        preserve_insertion_order: "false"

@@ -1,0 +1,163 @@
+---
+version: 2
+
+models:
+  - name: er_thresholds
+    description: |
+      **Purpose**
+      The threshold dimension. Every threshold at which edges and clusters are
+      computed, materialised as data so that all of them exist in one build.
+      Stage 6's acceptance criteria require label parity at three thresholds
+      simultaneously, and cross-threshold monotonicity is not expressible as a
+      dbt test at all when the partitions never coexist in a single build
+      (DesignDoc 1.7, DR-08; Appendix A M16).
+
+      **Grain**
+      One row per configured threshold pair. `thr_auto_merge` is unique and is
+      the primary key; the same auto-merge threshold cannot be configured twice
+      with different gray bands, because downstream models cross-join on it and
+      a duplicate would silently double every partition.
+
+      **Upstream**
+      None. Built from the `er_thresholds` var at parse time. It reads no
+      relation and has no `ref()`, which is why it is the one model that can
+      exist before the input contract does.
+
+      **Splink parity**
+      No Splink surface. Splink takes one threshold as a function argument and
+      has no equivalent relation. This model does not change what is computed at
+      any single threshold; it changes how many are computed per build.
+
+      **Determinism**
+      A pure function of the `er_thresholds` var. No `ref()`, no clock, no
+      sample, no aggregate. Row order is not defined and must not be relied on
+      -- downstream models join on `thr_auto_merge`, they do not read this in
+      order.
+
+      **Caveats**
+      The `cast(... as double)` in the model body is load-bearing and must not be
+      "simplified" away. DuckDB types a bare decimal literal as DECIMAL, and
+      comparing a DECIMAL threshold against a DOUBLE `match_probability` moves
+      the boundary -- which is the one thing a threshold must not do. The bug it
+      would cause is a pair on the wrong side of a cutoff, which is silent, and
+      it would appear as a parity failure in Stage 6 rather than here.
+
+      There is no default for `er_thresholds`, deliberately. See 1.8: the
+      default that used to exist measurably cost ~330 true pairs for zero
+      precision benefit on this project's own reference corpus.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: thr_auto_merge
+        data_type: double
+        description: >
+          The auto-merge threshold. A scored pair becomes an edge when
+          `match_probability >= thr_auto_merge`. This is "the threshold" wherever
+          the design documents say that without qualification. Never null: the
+          model raises ER-011 at compile time if an entry omits it.
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: thr_review_low
+        data_type: double
+        description: >
+          The lower edge of the gray band. Pairs in the half-open interval
+          `[thr_review_low, thr_auto_merge)` are emitted to `er_review_pairs` for
+          the platform and are never clustered. Never null; defaults to
+          `thr_auto_merge`, which makes the band empty and reproduces
+          single-threshold behaviour exactly.
+        constraints:
+          - type: not_null
+
+    # NOTE the `arguments:` nesting. `require_generic_test_arguments_property`
+    # is pinned true in dbt_project.yml, so the conventional top-level form
+    # raises MissingArgumentsPropertyInGenericTestDeprecation -- and under
+    # `warn_error_options.error: all` that deprecation is itself an error.
+    # Neither design document shows this form; found on first execution.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "thr_review_low <= thr_auto_merge"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "thr_auto_merge > 0.0 and thr_auto_merge <= 1.0"
+
+unit_tests:
+  # 12.2 / 3.69: every fixture is `format: sql` with an explicit cast on
+  # every column. agate's inference on `format: dict` read DATE from
+  # "not-a-date", and the error was the lucky outcome.
+  #
+  # This model has no inputs -- it is a pure function of a var -- so the
+  # `overrides.vars` block is the fixture.
+  - name: review_low_defaults_to_auto_merge
+    description: >
+      An entry with no `review_low` yields an empty gray band. This is the
+      case that makes a single threshold the degenerate form of two, so it
+      is the one that must not regress.
+    model: er_thresholds
+    # `given` is REQUIRED by dbt-core 1.12.2 even for a model with no inputs.
+    # This model reads no relation -- it is a pure function of a var -- so the
+    # empty list is the honest value, and `overrides.vars` is the real fixture.
+    given: []
+    overrides:
+      vars:
+        er_thresholds:
+          - auto_merge: 0.9
+    expect:
+      format: sql
+      rows: |
+        select
+            cast(0.9 as double) as thr_auto_merge,
+            cast(0.9 as double) as thr_review_low
+
+  - name: explicit_gray_band_is_preserved
+    description: >
+      An explicit `review_low` is carried through unchanged, and both columns
+      are DOUBLE rather than DECIMAL.
+    model: er_thresholds
+    # `given` is REQUIRED by dbt-core 1.12.2 even for a model with no inputs.
+    # This model reads no relation -- it is a pure function of a var -- so the
+    # empty list is the honest value, and `overrides.vars` is the real fixture.
+    given: []
+    overrides:
+      vars:
+        er_thresholds:
+          - auto_merge: 0.9
+            review_low: 0.7
+    expect:
+      format: sql
+      rows: |
+        select
+            cast(0.9 as double) as thr_auto_merge,
+            cast(0.7 as double) as thr_review_low
+
+  - name: three_thresholds_coexist_in_one_build
+    description: >
+      The whole reason this model exists: Stage 6's acceptance criteria name
+      {0.5, 0.9, 0.99} and need all three in one build.
+    model: er_thresholds
+    # `given` is REQUIRED by dbt-core 1.12.2 even for a model with no inputs.
+    # This model reads no relation -- it is a pure function of a var -- so the
+    # empty list is the honest value, and `overrides.vars` is the real fixture.
+    given: []
+    overrides:
+      vars:
+        er_thresholds:
+          - auto_merge: 0.5
+          - auto_merge: 0.9
+          - auto_merge: 0.99
+    expect:
+      format: sql
+      rows: |
+        select
+            cast(0.5 as double) as thr_auto_merge,
+            cast(0.5 as double) as thr_review_low
+        union all
+        select
+            cast(0.9 as double) as thr_auto_merge,
+            cast(0.9 as double) as thr_review_low
+        union all
+        select
+            cast(0.99 as double) as thr_auto_merge,
+            cast(0.99 as double) as thr_review_low

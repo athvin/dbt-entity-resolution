@@ -1627,7 +1627,16 @@ That last one has a consumer-facing consequence worth stating in §19's terms: *
 our models**, so the tests they write against `er_golden_records` are data tests, and every guarantee they
 get from *our* unit tests is a guarantee we ran in *our* CI.
 
-> **[REVIEW 2026-08-23] RC56 — Whether a consumer's `dbt build` executes this package's unit tests is
+> **[REVIEW 2026-08-23] Fixed (F35) — RC56 is answered by measurement, and the answer is "yes".** `[RUN]`
+> 2026-08-23: a consuming project's `dbt build` produced **three `unit_test` rows in its
+> `run_results.json`**. So **3.71's second branch applies** — the package ships the documented
+> `--exclude-resource-type unit_test` guard, and `consumer_smoke/` asserts that guard rather than asserting
+> zero rows. Appendix D.0 records the run. *(Caveat carried forward: measured against `integration_tests/`,
+> which installs by `local: ../`; the git-ref path is 3.64's job.)*
+>
+> <details><summary>Original review note (RC56), retained</summary>
+>
+> **RC56 — Whether a consumer's `dbt build` executes this package's unit tests is
 > unverified, and the two answers need different code.** dbt supports unit tests only for models in the
 > current project, which settles what a consumer may *write* but not what their build *runs* against our
 > `unit_tests:` blocks — and the difference is a §14.8-class hostile default: static-fixture compute in
@@ -1637,6 +1646,8 @@ get from *our* unit tests is a guarantee we ran in *our* CI.
 > `--exclude-resource-type unit_test` guard and assert that instead), but which branch is real is one
 > `dbt build` in `consumer_smoke/` away. Settle it in the same job that answers 3.64, and delete the branch
 > that turns out to be dead.
+>
+> </details>
 
 ### 12.3 Tolerance belongs in the harness, not in dbt
 
@@ -3635,6 +3646,64 @@ and every Appendix C delta table.
 > C-deltas apply before first run, whether `verify-gates` can land with the first commit, what §2's gates do
 > before any model exists, and what §23's same-PR injection rule means when all seventy-one rows are new at
 > once.
+
+### D.0 Second execution — 2026-08-23, step 1 of D.1 `[RUN]`
+
+The rebuild has begun. This records what step 1 of D.1 executed and, more usefully, **what it disproved** —
+Appendix D's original entry notes that the v1 exercise *"disproved six claims that careful research had
+stated with confidence"*, and this one disproved six more. Everything below is `[RUN]` on
+dbt-core 1.12.2 · dbt-duckdb 1.11.0 · DuckDB 1.5.5 · Python 3.12.13 · macOS arm64.
+
+#### Confirmed
+
+| Claim | Result |
+|---|---|
+| §4's pins co-resolve | **Yes.** `uv lock` resolves 108 packages; every exact pin lands at its stated version, including `sqlglot==30.17.0` under dbt-bouncer's `<31` |
+| §8.2 — dbt-duckdb enforces DDL constraints | **Yes, and they bite.** `CREATE TABLE … (thr_auto_merge DOUBLE PRIMARY KEY, thr_review_low DOUBLE NOT NULL)`; a duplicate key raises `ConstraintException`, and so does a NULL. *Observed to fail when violated*, which §0 notes `[VERIFIED]` alone never establishes |
+| `persist_docs` writes real database comments | **Yes.** Column descriptions are readable from `duckdb_columns()` |
+| M16's `DOUBLE` cast trap is avoidable | **Yes.** `cast(… as double)` produces DOUBLE, not DECIMAL |
+| §1.8 — no default threshold, fails compilation | **Yes.** `ER-010` raises at parse time with the empty var |
+
+#### Disproved, or absent
+
+1. **`require_generic_test_arguments_property: true` makes the conventional data-test syntax invalid.**
+   Test arguments must nest under `arguments:`; the top-level form raises
+   `MissingArgumentsPropertyInGenericTestDeprecation`, which `warn_error_options.error: all` turns into an
+   error. **Neither document shows the required form**, so every data-test example in both is currently
+   unbuildable.
+2. **`+group: er_core` requires a `groups:` declaration that Appendix C never provides.** §5's tree names
+   `models/_er_groups.yml`; its contents existed nowhere. Without it, parse fails with
+   *"Invalid group 'er_core', expected one of []"*.
+3. **`given:` is required on every unit test**, even for a model that reads no relation. D12's "every model
+   has a unit test" therefore needs `given: []` on any parameter-only model — of which this project will
+   have several.
+4. **A misplaced `unit_tests:` block is silently ignored.** Nested under a `models:` entry rather than at
+   the top level of the properties file, it produces a clean parse, exit 0, **no warning**, and zero unit
+   tests. This is not a suppressed warning — `error: all` cannot catch it, because nothing is emitted.
+   **3.20's gate then reports "this model has no unit test" for a model that has three**, which is the
+   opposite of the truth and sends the reader to the wrong file. Wants a new standard; see below.
+5. **A consumer's `dbt build` DOES execute this package's unit tests.** Measured: three `unit_test` rows in
+   the consuming project's `run_results.json`. **This settles RC56 and selects 3.71's *second* branch** —
+   the package must ship the documented `--exclude-resource-type unit_test` guard, and `consumer_smoke/`
+   asserts *that*, not zero rows. *(Caveat: measured against `integration_tests/`, which installs by
+   `local: ../`. The true consumer path is a git-ref install, which is what 3.64's job exists for.)*
+6. **A failed `dbt parse` leaves the previous `target/manifest.json` in place.** Anything reading artifacts
+   after a failed parse reads **stale** data — including dbt-bouncer, whose whole input is `target/`. This
+   is a concrete mechanism for §15's existing *"do not cache `target/`"* rule, which previously rested on
+   the milder argument about stale databases.
+
+#### The standard finding 4 asks for
+
+> **3.72 — A `unit_tests:` block is at the top level of its properties file.** *Mechanism:*
+> `scripts/check_unit_test_placement.py`, or an added rule in 3.69's `check_unit_test_fixtures.py`, walking
+> every `.yml` under both projects' `model-paths` and rejecting a `unit_tests` key nested inside a `models:`
+> entry. *Gate:* P + CI. *On violation:* non-zero exit naming the file and the model.
+> *`verify_gates.py` injection:* nest a valid `unit_tests:` block under a model entry; assert non-zero exit
+> and the expected string. **Not yet added to §3**, because §23 requires a new standard to ship with its
+> injection in the same PR and `verify_gates.py` is step 4 of D.1. It lands there, and Waiver B-1 covers the
+> interval.
+
+---
 
 ### D.1 Bootstrap order `[UNVERIFIED]`
 
