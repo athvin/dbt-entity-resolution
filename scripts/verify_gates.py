@@ -353,7 +353,7 @@ INJECTIONS: tuple[Injection, ...] = (
         expect="assert",
         edits=(
             (
-                "macros/sql_gen/er_tf_adjustment_sql.sql",
+                "macros/sql_gen/er_tf_divisor_sql.sql",
                 (
                     "        when coalesce({{ tf_left }}, {{ tf_right }}) >= "
                     "coalesce({{ tf_right }}, {{ tf_left }})"

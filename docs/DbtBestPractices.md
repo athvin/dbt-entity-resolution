@@ -3618,6 +3618,14 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     product below `1e-300` scores at the floor, which is precisely what a log-space sum fails to do as it
     continues to −1006.54.
 
+64. **I skipped a gate and CI caught it — which is the system working, and a claim I should not have
+    made.** PD-1f ran pre-commit, pytest, mypy, `verify_gates` and `make build`, but **not `make
+    bouncer`**, and the PR body said all gates were green. dbt-bouncer then failed on
+    `check_macro_name_matches_file_name`: I had put `er_tf_divisor_sql` inside
+    `er_tf_adjustment_sql.sql`, violating 3.33. **`make ci` exists precisely so the local set is not a
+    subset chosen by hand**, and running the targets individually is how the subset drifts. The rule was
+    right, the mechanism worked, and the reporting was the part that failed.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`

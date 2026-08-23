@@ -40,22 +40,6 @@
   level** -- detected by the sentinel, *not* by `gamma == 0`.
 -#}
 
-{% macro er_tf_divisor_sql(tf_left, tf_right, tf_minimum_u_value=0.0) %}
-{%- set greatest -%}
-case
-        when coalesce({{ tf_left }}, {{ tf_right }}) >= coalesce({{ tf_right }}, {{ tf_left }})
-        then coalesce({{ tf_left }}, {{ tf_right }})
-        else coalesce({{ tf_right }}, {{ tf_left }})
-    end
-{%- endset -%}
-{%- if tf_minimum_u_value and tf_minimum_u_value > 0 -%}
-greatest({{ greatest }}, cast({{ tf_minimum_u_value }} as float8))
-{%- else -%}
-{{ greatest }}
-{%- endif -%}
-{% endmacro %}
-
-
 {% macro er_tf_adjustment_sql(output_column_name, levels, tf_column=none) %}
   {%- set column = tf_column or output_column_name -%}
   {%- set tf_left = '"tf_' ~ column ~ '_l"' -%}
