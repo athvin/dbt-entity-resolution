@@ -292,6 +292,68 @@ are the engine's to provide; what anyone does with them is the platform's.
 > `thresholds` relation is this document's, and follows from adopting both.
 > **Reversible:** reopen DR-08, DR-09 and B.2.
 
+### 1.8 The quality floor, and who owns it
+
+**Normative. Answers §A.6 Q5. Register row: DR-22.**
+
+Parity is not quality, and this project can be 100% parity-green on a configuration that is badly wrong.
+Its own reference fixture **is** such a configuration: `[RECON]` on `fake_1000` with the model Stage 0.4
+freezes measures **F1 = 0.7138 and blocking recall = 0.5550** at t = 0.9 — 1,651 of 2,975 true pairs found,
+1,324 missed. Adding two blocking rules takes recall to **0.9173** and end-to-end F1 to **0.9809**, an
+improvement of **+0.26 F1 that is invisible to every gate in §6.4** (M12).
+
+Q5 asked three things. (c) — whether the gray band is two thresholds or one — is answered by §1.7: two.
+The other two are answered here.
+
+#### (a) The floors are a Stage 0.4 gate, not an aspiration
+
+**The floors are committed numbers, per fixture, and Stage 0.4 cannot complete without them.** They are
+measured from the **fixed** model, not the current one — M12 rec 6 requires fixing Stage 0.4's frozen model
+rather than freezing a bad one, and §5 Stage 0.4 already carries that.
+
+The numbers are set at Stage 0.4 and are **deliberately not invented here**, because they must come from a
+measurement of the model that actually ships. What is fixed now is the rule:
+
+| Gate | Where | Form |
+|---|---|---|
+| `er_blocking_recall_floor` | Stage 3 | **Two-sided.** Failing below is a regression; failing *above* means the fixture or the oracle moved, not the code — and that is equally a finding (M12 rec 2) |
+| `er_f1_floor` | Stage 10's measurement models, gating from Stage 2 onward | Per fixture, committed |
+| `er_max_cluster_size` | Stage 6 | A **hard test**, not a warning. Cluster-level error amplifies: `[RECON]` edge precision 0.9764 against **cluster** precision 0.7495 — 14.8× (M12 rec 3) |
+
+**The floors M12 already measured are the minimum the fixed model must beat**, recorded so Stage 0.4 has a
+target rather than a blank page: recall ≥ 0.9173 and F1 ≥ 0.9809 on `fake_1000`, both achieved by adding
+`block_on(dob)` and `block_on(email)`.
+
+#### (b) `er_threshold` has no defensible default, so the package requires it
+
+**There is no package-level default threshold.** An unset `thr_auto_merge` fails compilation, exactly as an
+unset `er_input_relation` does (§2.0) and an unvalidated model JSON does (§1.5). The package fails rather
+than guessing.
+
+This is not fastidiousness. **The default that was there is measurably harmful.** `[RECON]` on the
+*improved* model: F1 peaks at **0.9809 at t = 0.5** and falls to **0.9219 at t = 0.9** — the value §8's own
+Definition of Done used as its example — costing roughly **330 true pairs for zero precision benefit**,
+because precision is already 1.0000 at the lower threshold. A default nobody justified was silently
+choosing worse output on the project's own reference corpus.
+
+A threshold is a precision/recall trade against a cost function the package cannot see. `integration_tests/`
+and each fixture set theirs explicitly, with the target metric and the measured P/R/F1 at that point
+recorded beside it, and the harness fails if a configured threshold is **not on the committed curve**
+(M12 rec 5).
+
+#### Who owns it
+
+*"Without an owner, Stage 10 is a reporting stage and the product ships at 0.72."* Ownership is made real
+the same way `PARITY.md`'s and `divergence-log.md`'s is: **the floors live in a committed file with a
+`CODEOWNERS` entry**, so changing one is a reviewed act with a name attached rather than a var edit. A
+floor anybody can lower to make CI green is not a floor.
+
+> **Decided under delegated authority 2026-08-23.**
+> **Recommendation source:** M12 recommendations 2, 3, 5 and 6, adopted. Removing the default threshold
+> outright goes beyond rec 5's *"commit it with a justification"* — the justification measured here is that
+> the default was wrong, and a package cannot justify a number for a corpus it has never seen.
+> **Reversible:** reopen DR-22 in §B.3.
+
 ---
 
 ## 2. What Splink does, as data transformations
@@ -2702,7 +2764,7 @@ Add the standing note: *exact bit equality is the right default because both eng
 4. ~~**Frozen TF or live TF as the default?**~~ **RESOLVED (2026-08-20): frozen by snapshot** — D7a;
    register row **DR-03** records "§A.6 Q4 answered". *(Original rationale, kept:)* Frozen preserves the incumbent's invariant, makes Stage 8's equivalence AC achievable by construction, and makes entity membership reproducible from a record's own data — at the cost of an explicit refresh operation and a snapshot relation. Live is simpler and makes every score corpus-dependent. This is a Stage-2 model contract, so it must be decided before `tf_all` is written (B3).
 
-5. **What is the quality floor, and who owns it?** The frozen reference model in Stage 0.4 measures **F1 = 0.72 / blocking recall = 0.51** on `fake_1000`; a two-rule change lifts F1 to 0.98. Parity gates cannot see the difference. Someone must own (a) the committed per-fixture F1 and recall floors, (b) the justification for `er_threshold`, and (c) whether the gray band is two thresholds or one. Without an owner, Stage 10 is a reporting stage and the product ships at 0.72.
+5. ~~**What is the quality floor, and who owns it?**~~ **RESOLVED (2026-08-23)** — §1.8, register row **DR-22**. Committed per-fixture floors set at Stage 0.4 from the fixed model; no package default threshold, because the one that was there measurably costs ~330 true pairs for zero precision benefit; ownership mechanised through `CODEOWNERS` rather than named in prose. Part (c) was answered separately by §1.7 (DR-09): two thresholds. *(Original text, kept:)* The frozen reference model in Stage 0.4 measures **F1 = 0.72 / blocking recall = 0.51** on `fake_1000`; a two-rule change lifts F1 to 0.98. Parity gates cannot see the difference. Someone must own (a) the committed per-fixture F1 and recall floors, (b) the justification for `er_threshold`, and (c) whether the gray band is two thresholds or one. Without an owner, Stage 10 is a reporting stage and the product ships at 0.72.
 
 > **[REVIEW 2026-08-23] Fixed (F31) — RC16 is closed: the rename is decided.** DR-12 is CURRENT, §1.6
 > carries the decision, and the body no longer emits `entity_id` as the shipped name — D4's listing is kept
@@ -3744,6 +3806,7 @@ force), **SUPERSEDED** (with the pointer), **OPEN** (needs an answer), **CONFLIC
 | DR-18 | Data classification & retention | **MISSING** | — | **G4** |
 | DR-19 | Parity claim's validity domain | **MISSING** | — | **G5** |
 | DR-20 | Package versioning & compatibility | **MISSING** | — | **G12**, depends on **G6** |
+| DR-22 | **Quality floor and its owner** | **CURRENT (2026-08-23)** | **§1.8.** Committed per-fixture `er_blocking_recall_floor` (two-sided), `er_f1_floor` and `er_max_cluster_size`, set at Stage 0.4 from the **fixed** model and gating from Stage 2 onward. **No package default threshold** — an unset `thr_auto_merge` fails compilation. Floors live in a file with a `CODEOWNERS` entry | Answers §A.6 **Q5**, which had no register row and no owner. Evidence: M12's `[RECON]` — the frozen model measures F1 0.7138 / recall 0.5550, two rules take it to 0.9809 / 0.9173, and the removed default t = 0.9 costs ~330 true pairs for zero precision benefit. **Delegated authority** |
 | DR-21 | Unit-test coverage policy | **CURRENT (2026-08-23)** | **Every model; cases decided when the model is written (D12)** | Supersedes M17 rec (c)'s five-model scope — marked there. No automatic exemption class: a recursive-SQL or toolchain-regression exclusion is a dated, reasoned waiver under `DbtBestPractices.md` 3.43. Gated by its 3.20 |
 
 Rows marked CONFLICT or MISSING are the ones to close before writing models. Rows marked OPEN have a
