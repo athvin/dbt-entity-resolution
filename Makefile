@@ -147,7 +147,8 @@ repo-checks:
 	         check_standards_matrix check_verified_markers \
 	         check_divergence_log check_baseline_manifests \
 	         check_unit_test_fixtures check_canonical_homes \
-	         check_pii_heuristics; do \
+	         check_pii_heuristics check_ci_makefile_parity \
+	         check_baselines_reproducible; do \
 		if [ -f "scripts/$$s.py" ]; then \
 			echo "  running scripts/$$s.py"; \
 			uv run python "scripts/$$s.py"; \

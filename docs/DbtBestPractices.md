@@ -293,6 +293,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 
 | | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.75 | The model JSON passes the §1.5 trust boundary before anything builds | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact | P + CI | Non-zero exit naming the level and the function |
+| 3.84 | Every committed baseline regenerates byte-identically from the frozen model (§20.1, A.4's "canonical ordering", D.0 finding 71) | `scripts/check_baselines_reproducible.py` -- regenerates into a temp dir and compares `sha256`; `gen_baseline.py` canonicalises column and row order | CI | Check fails naming the artefact and both hashes |
 | 3.83 | The CI workflow and the Makefile agree on which project and which paths their shared commands look at (§17, D.0 finding 69) | `scripts/check_ci_makefile_parity.py` -- compares `--project-dir` and target paths for every drift-prone command present in both | pre-commit + CI | Check fails naming the command and both sides' targets |
 | 3.82 | Term frequencies sum to exactly 1.0 per column (§3.5's non-null denominator) | `tests_python/test_term_frequency_sql.py`, executed against the real fixture | CI | Test fails naming the column and the shortfall |
 | 3.81 | The JSON-derived column lists, the rendered SQL and the unit-test fixtures agree (RC57, M2, D12) | `tests_python/test_column_drift_guard.py` -- three artefacts checked against one model JSON, including against Splink's own product order | CI | Test fails naming the drifted artefact |
@@ -3671,8 +3672,40 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     old `dbt parse` at the package root and the old `sqlfluff lint models` — **`make ci` was exit 0
     locally while CI went red on exactly the thing I had just fixed.** That is worse than either copy
     being wrong: a green local run is *evidence* under §17's promise, and here the promise was not true.
-    Both steps corrected. **The duplication itself is unguarded** — nothing checks that the workflow and
-    the Makefile agree — and that gap is now the most likely source of the next local/CI divergence.
+    Both steps corrected, and the duplication itself is now guarded by **3.83**
+    (`scripts/check_ci_makefile_parity.py`), whose injection is this exact diff rather than a synthetic
+    mutation.
+
+70. **The baseline harness emitted only end-products, so Stage 2's parity claim had no oracle.**
+    `gen_baseline.py` wrote `predictions` and `clusters` and nothing in between, while Stage 0.3's brief
+    is *"every intermediate"*. The visible consequence was small and the invisible one was not:
+    `er_stg_input.yml` states *"Equals Splink's concat excluding `__splink_salt` (S1)"* as a **Splink
+    parity** claim, and no test anywhere could check it — a description asserting parity with nothing
+    behind it is the same inert-config defect as finding 67, one layer up. `concat.parquet` and a
+    long-format `tf_all.parquet` are now emitted, the latter from Splink's **own** `compute_tf_table`, so
+    D7a's frozen snapshot is Splink's output rather than this package's macro checked against itself.
+
+71. **The frozen baselines could not be regenerated, and every gate over them still passed.** Running
+    `gen_baseline.py` twice produced different bytes for every artefact. Three separate causes, and each
+    one alone was enough:
+    * **Rows came back in engine order.** Three regenerations from the *same* frozen model gave three
+      different `predictions.parquet` files — 3,989 rows each, set-difference **zero**. A.4 gates pair
+      sets as *"exact after canonical ordering"*; nothing performed the ordering.
+    * **Column order varied too.** Splink built the concat table's `tf_*` columns in an order that
+      changed between processes, so sorting rows alone left the parquet schema unstable.
+    * **`__splink_salt` is 1,000 unseeded random floats**, redrawn every run. S1 says to exclude it from
+      comparison; the stronger true statement is that a baseline *retaining* it can never be an oracle.
+    Underneath all three, a fourth: **the harness retrained on every invocation and overwrote the frozen
+    model**, and Splink's EM is not byte-reproducible — measured at **1.4e-15 relative (~6 ULP)** across
+    four processes with identical seed and code. So §20.1's regeneration target emitted a diff every
+    time and was therefore never run, and 3.62 verified a `sha256` that changed for reasons that had
+    nothing to do with the data. Fixed by canonicalising columns and rows in the one function every
+    baseline passes through, dropping the salt (and **recording** that in the manifest, so the exclusion
+    is a stated fact rather than an invisible filter), and making retraining opt-in behind `--refreeze`.
+    **A.4 gained the row it never had** — trained model parameters, relative `1e-12` — because byte
+    equality is not achievable for a trained model and a table with no row for the artefact is what let
+    the silent re-freeze look normal. Guarded by **3.84**. The re-sorted baselines were verified
+    content-identical to the committed ones: 3,989 pairs joined, `max|Δmw| = 0`, zero edge flips.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both

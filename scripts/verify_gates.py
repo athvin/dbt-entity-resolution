@@ -346,6 +346,20 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.84",
+        what="write baselines in engine order instead of canonical order",
+        mutate="noop",
+        command=("python", "scripts/check_baselines_reproducible.py"),
+        expect="does not regenerate byte-identically",
+        edits=(
+            (
+                "scripts/gen_baseline.py",
+                "    columns = sorted(frame.columns)",
+                "    columns = list(frame.columns)",
+            ),
+        ),
+    ),
+    Injection(
         standard="3.83",
         what="point CI's compile gate at the package root while the Makefile parses the project",
         mutate="noop",

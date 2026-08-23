@@ -62,6 +62,11 @@ _WRAP_WIDTH = 84
 # The thresholds Stage 6's acceptance criterion names simultaneously (DR-08).
 THRESHOLDS = (0.5, 0.9, 0.99)
 
+# S1's column. Splink adds it to the concat table as an unseeded random float
+# used for salting blocking rules; it is excluded from comparison and, because
+# it is redrawn every run, from the baseline itself. See `_concat_frame`.
+SALT_COLUMN = "__splink_salt"
+
 
 def _git(*args: str) -> str:
     try:
@@ -139,12 +144,37 @@ def _write_parquet(frame: pd.DataFrame, path: Path) -> None:
     section 4 pin table. DuckDB writes it natively and is already the engine
     both sides of every comparison run on -- so this adds no dependency, and
     keeps the baseline written by the same library that reads it back.
+
+    **Rows are sorted before writing, and that is not a tidiness measure.**
+    `[RUN]` 2026-08-23: three regenerations from the *same frozen model* produced
+    three different `predictions.parquet` files -- 3,989 rows each, **zero**
+    set-difference, different bytes. Splink returns rows in engine order, which
+    varies with scheduling, so every baseline was byte-unstable while being
+    semantically identical (D.0 finding 71).
+
+    That made three things quietly untrue at once: §20.1's regeneration target
+    could not be run without producing a diff, 3.62's manifest recorded a
+    `sha256` that changed for no semantic reason, and A.4's own wording -- pair
+    sets are **"exact after canonical ordering"** -- described an ordering step
+    that nothing in this harness performed.
+
+    Sorting happens HERE, in the one function every baseline passes through,
+    rather than at each call site, because a per-artefact sort key is a list
+    that can be added to incompletely -- and the artefact whose key was
+    forgotten is exactly the one that would drift silently.
     """
     import duckdb  # noqa: PLC0415
 
+    # COLUMNS first, then rows. Both vary: Splink builds the concat table's
+    # `tf_*` columns in an order that changed between processes, so sorting rows
+    # alone left the parquet schema -- and therefore the bytes -- unstable.
+    # Canonicalising both is what makes `sha256` mean "same data".
+    columns = sorted(frame.columns)
+    ordered = frame[columns].sort_values(by=columns, kind="mergesort").reset_index(drop=True)
+
     con = duckdb.connect()
     try:
-        con.register("frame", frame)
+        con.register("frame", ordered)
         con.execute("copy frame to ? (format parquet)", [str(path)])
     finally:
         con.close()
@@ -171,14 +201,142 @@ def _train(linker: Any) -> Any:
     return linker
 
 
+# Minting runs SINGLE-THREADED, and this is load-bearing rather than cautious.
+#
+# `[RUN]` 2026-08-23, five processes, same seed, same code, same machine:
+# EM-trained `m_probability` vectors hash identically across three separate
+# processes at `threads=1`, and DIVERGE in the last ULP at `threads=8`. DuckDB
+# combines partial aggregates in completion order and float addition is not
+# associative, so thread scheduling reaches the trained parameters.
+#
+# The consequence is not small. Without this, regenerating the "frozen" model
+# produces a different `model_json_sha256` every time -- so §20.1's regeneration
+# target emits a diff on every run, 3.62's manifest records a sha nobody can
+# re-derive, and every parity claim in the project is measured against an
+# artefact that cannot be reproduced. That is the fully-developed form of the
+# defect this repository keeps meeting: a gate that looks like it works.
+#
+# **This does not weaken §13.2.** That rule requires the DETERMINISM GATE to run
+# at `threads=8`, because the claim under test there is that *this package's SQL*
+# is thread-stable. The claim here is different and narrower: the ORACLE must be
+# mintable twice. Splink's EM is not thread-stable, and that is a property of
+# Splink, not of our SQL -- pinning it at the point of minting is what keeps the
+# two claims from being confused for one another.
+MINT_THREADS = 1
+
+
 def _linker(frame: pd.DataFrame, settings: Any) -> Any:
     from splink import DuckDBAPI, Linker  # noqa: PLC0415
 
-    return Linker(frame, settings, db_api=DuckDBAPI(), set_up_basic_logging=False)
+    db_api = DuckDBAPI()
+    db_api._con.execute(f"SET threads TO {MINT_THREADS}")  # noqa: SLF001 -- no public setter
+    return Linker(frame, settings, db_api=db_api, set_up_basic_logging=False)
 
 
-def generate(fixture: Path, out_dir: Path, model_json: Path) -> list[Path]:
-    """Generate every baseline for one fixture. Returns the files written."""
+def _concat_frame(linker: Any) -> pd.DataFrame:
+    """Splink's `__splink__df_concat_with_tf`, as it exists in the engine.
+
+    Emitted with the wide `tf_*` columns intact -- the oracle should be what
+    Splink actually produced, and a baseline pre-filtered to match the
+    expectation cannot then falsify it.
+
+    **`__splink_salt` is the one exception, and measuring it sharpened S1.**
+    `[RUN]`: the column holds 1,000 distinct unseeded random floats, one per
+    row, redrawn on every run. So a concat baseline containing it can never be
+    byte-stable -- three regenerations produced three different files with
+    identical data. S1 says to exclude the salt from comparison; the stronger
+    statement is that a baseline *retaining* it is unusable as an oracle at all.
+
+    Dropping it silently would hide that, so `SALT_COLUMN` is recorded in the
+    manifest instead: the exclusion becomes a stated fact a test can assert
+    against, rather than a filter nobody can see.
+    """
+    con = linker._db_api._con  # noqa: SLF001 -- no public accessor for intermediates
+    name = next(
+        r[0]
+        for r in con.execute("select table_name from information_schema.tables").fetchall()
+        if r[0].startswith("__splink__df_concat_with_tf")
+    )
+    frame = con.execute(f'select * from "{name}"').fetchdf()  # noqa: S608 -- name from catalog
+    if SALT_COLUMN not in frame.columns:
+        msg = (
+            f"Splink's concat table has no `{SALT_COLUMN}` column. S1 is written "
+            f"around its presence, and this harness drops it deliberately -- if "
+            f"it is gone, S1 needs rechecking rather than silently passing."
+        )
+        raise RuntimeError(msg)
+    return frame.drop(columns=[SALT_COLUMN])
+
+
+def _tf_columns(concat: pd.DataFrame) -> list[str]:
+    """Which columns carry a TF adjustment -- asked of SPLINK, never hard-coded.
+
+    Splink emits one `tf_<col>` column into the concat table per TF-adjusted
+    comparison, so the concat table *is* the answer. A literal list here would
+    be a second copy of a fact the model JSON already decides, and M2's finding
+    is precisely that such copies drift silently -- add a TF adjustment to the
+    model and the baseline would keep freezing the old set without erroring.
+    """
+    return sorted(c[len("tf_") :] for c in concat.columns if c.startswith("tf_"))
+
+
+def _tf_long_frame(linker: Any, concat: pd.DataFrame) -> pd.DataFrame:
+    """D7's long-format term frequency, from Splink's OWN `compute_tf_table`.
+
+    D7a freezes `tf_all` by snapshot, and this is where the snapshot is minted.
+    Taking it from `compute_tf_table` rather than from this package's own
+    `er_term_frequency_sql` is deliberate: it makes the frozen values **Splink's
+    output**, so the macro is verified against the oracle instead of against
+    itself. D7a's warning that the incumbent *"never calls `compute_tf_table`"*
+    is about the production path -- minting a snapshot is precisely the opt-in
+    `er_tf_mode='refresh'` operation step 3 carves out for it.
+
+    Long format, one row per `(column_name, value)`, because the wide form makes
+    the grain a function of the model JSON: add a TF-adjusted comparison and
+    every downstream contract changes shape.
+    """
+    import pandas as pd  # noqa: PLC0415
+
+    columns = _tf_columns(concat)
+    if not columns:
+        msg = (
+            "the concat table carries no `tf_*` column, so no term-frequency "
+            "snapshot can be minted. Either the model JSON has no TF-adjusted "
+            "comparison, or Splink's concat schema moved -- an empty snapshot "
+            "would freeze silently and every TF adjustment would vanish."
+        )
+        raise RuntimeError(msg)
+
+    parts: list[pd.DataFrame] = []
+    for column in columns:
+        frame = linker.table_management.compute_tf_table(column).as_pandas_dataframe()
+        parts.append(
+            pd.DataFrame(
+                {
+                    "column_name": column,
+                    "value": frame[column].astype(str),
+                    "tf": frame[f"tf_{column}"],
+                }
+            )
+        )
+    combined = pd.concat(parts, ignore_index=True)
+    return combined.sort_values(["column_name", "value"]).reset_index(drop=True)
+
+
+def generate(
+    fixture: Path, out_dir: Path, model_json: Path, *, refreeze: bool = False
+) -> list[Path]:
+    """Generate every baseline for one fixture. Returns the files written.
+
+    **Training is OPT-IN, and that is the whole point.** Until 2026-08-23 this
+    function retrained on every invocation and overwrote the frozen model, which
+    meant §20.1's regeneration target could never be run without silently moving
+    the artefact every parity claim is measured against (D.0 finding 71). The
+    default path now *reads* the frozen model and regenerates the baselines from
+    it -- which is both what a consumer does and what CI can safely repeat.
+
+    `refreeze=True` retrains and re-mints. It is a deliberate, reviewable act.
+    """
     import duckdb  # noqa: PLC0415
     import pandas as pd  # noqa: PLC0415
     import splink  # noqa: PLC0415
@@ -191,8 +349,17 @@ def generate(fixture: Path, out_dir: Path, model_json: Path) -> list[Path]:
     #    that is the path a consumer takes and the only one that exercises
     #    serialisation.
     model_json.parent.mkdir(parents=True, exist_ok=True)
-    trained = _train(_linker(frame, build_settings()))
-    trained.misc.save_model_to_json(str(model_json), overwrite=True)
+    if refreeze:
+        trained = _train(_linker(frame, build_settings()))
+        trained.misc.save_model_to_json(str(model_json), overwrite=True)
+    elif not model_json.is_file():
+        msg = (
+            f"{rel(model_json, ROOT)} does not exist, so there is no frozen model "
+            f"to generate baselines from. Pass --refreeze to mint one; that is a "
+            f"deliberate act because it moves the artefact every parity claim in "
+            f"this project is measured against."
+        )
+        raise RuntimeError(msg)
     # Splink writes the JSON without a trailing newline, which `end-of-file-fixer`
     # then adds -- so every regeneration left a dirty tree AND changed the sha
     # the manifest had just recorded. Normalise here, before the sha is taken.
@@ -222,6 +389,22 @@ def generate(fixture: Path, out_dir: Path, model_json: Path) -> list[Path]:
     _write_parquet(pairs, pairs_path)
     written.append(pairs_path)
 
+    # 2a. The two INTERMEDIATES Stage 2 needs as oracles. Until now this harness
+    #     emitted only end-products -- predictions and clusters -- so Stage 2's
+    #     acceptance criteria had nothing to compare against and `stg_input`'s
+    #     "equals Splink's concat excluding `__splink_salt`" was a claim in a
+    #     model description rather than an assertion. A description that states
+    #     parity without a test is exactly the inert-config defect this project
+    #     keeps finding (D.0 finding 70).
+    concat = _concat_frame(linker)
+    concat_path = out_dir / "concat.parquet"
+    _write_parquet(concat, concat_path)
+    written.append(concat_path)
+
+    tf_path = out_dir / "tf_all.parquet"
+    _write_parquet(_tf_long_frame(linker, concat), tf_path)
+    written.append(tf_path)
+
     for threshold in THRESHOLDS:
         clusters = linker.clustering.cluster_pairwise_predictions_at_threshold(
             predictions, threshold_match_probability=threshold
@@ -237,6 +420,10 @@ def generate(fixture: Path, out_dir: Path, model_json: Path) -> list[Path]:
         "splink_version": splink.__version__,
         "model_json_sha256": _sha256(model_json),
         "seed": SEED,
+        # Recorded because it is the difference between an artefact that can be
+        # re-derived and one that cannot -- see MINT_THREADS. A manifest that
+        # omits it cannot explain why a regeneration disagreed.
+        "mint_threads": MINT_THREADS,
         "duckdb_version": duckdb.__version__,
         # RC54: sqlglot, not Splink, decides which levels get a TF adjustment,
         # and it arrives transitively -- a baseline under a different sqlglot is
@@ -245,6 +432,9 @@ def generate(fixture: Path, out_dir: Path, model_json: Path) -> list[Path]:
         "sqlglot_version": getattr(sqlglot, "__version__", "unknown"),
         "platform": _platform_triple(duckdb.__version__),
         "date": _git("log", "-1", "--format=%cs") or "unknown",
+        # Recorded rather than merely done: S1's exclusion is now a fact a test
+        # can assert, instead of a filter invisible in the artefact.
+        "excluded_columns": [SALT_COLUMN],
         "producing_commit": _git("rev-parse", "--short", "HEAD"),
         "source_fixture": rel(fixture, ROOT),
         "source_fixture_sha256": _sha256(fixture),
@@ -327,12 +517,20 @@ def main() -> int:
     )
     parser.add_argument("--out", type=Path, default=BASELINE_DIR / "fake_1000")
     parser.add_argument("--model-json", type=Path, default=MODEL_JSON_DIR / "fake_1000_v1.json")
+    parser.add_argument(
+        "--refreeze",
+        action="store_true",
+        help=(
+            "retrain and OVERWRITE the frozen model. Without this the frozen "
+            "model is read, not rewritten -- see D.0 finding 71."
+        ),
+    )
     args = parser.parse_args()
 
     logging.disable(logging.CRITICAL)
     warnings.filterwarnings("ignore")
 
-    written = generate(args.fixture, args.out, args.model_json)
+    written = generate(args.fixture, args.out, args.model_json, refreeze=args.refreeze)
     for path in written:
         sys.stdout.write(f"  wrote {rel(path, ROOT)}\n")
     sys.stdout.write(f"{len(written)} file(s) written.\n")
