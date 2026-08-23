@@ -292,7 +292,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | 3.71 | A consumer's build never executes this package's unit tests | `consumer_smoke/` job (§19.3, 3.64) asserts zero `unit_test` rows in its `run_results.json`; if dbt does execute them, the package ships the documented `--exclude-resource-type unit_test` guard and the job asserts that instead | CI | Job fails |
 
 | | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
-| 3.75 | The model JSON passes the §1.5 trust boundary before anything builds | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact | P + CI | Non-zero exit naming the level and the function |
+| 3.75 | The model JSON passes the §1.5 trust boundary before anything builds -- **both** SQL-bearing fields, comparison levels **and** `blocking_rules_to_generate_predictions` (D.0 finding 81) | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact. One code path for both fields -- two policies is how one of them ended up with none | P + CI | Non-zero exit naming the level or rule and the function |
 | 3.86 | Once the package declares a scored column, the quality floors measure the PACKAGE and not the oracle (§1.8, M12) | `scripts/check_floor_subject.py` -- keyed on a `match_probability` column DECLARATION and on whether the measurement reads a committed file, so neither renaming a model nor renaming the baseline directory disarms it | CI (`make repo-checks`, inside `make lint`) | `ER-086` naming the declaring model |
 | 3.84 | Every committed baseline regenerates byte-identically from the frozen model (§20.1, A.4's "canonical ordering", D.0 finding 71) | `scripts/check_baselines_reproducible.py` -- regenerates into a temp dir and compares `sha256`; `gen_baseline.py` canonicalises column and row order | CI | Check fails naming the artefact and both hashes |
 | 3.83 | The CI workflow and the Makefile agree on which project and which paths their shared commands look at (§17, D.0 finding 69) | `scripts/check_ci_makefile_parity.py` -- compares `--project-dir` and target paths for every drift-prone command present in both | pre-commit + CI | Check fails naming the command and both sides' targets |
@@ -3837,6 +3837,32 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     built the thing* caught it. The correction is recorded at §5 Stage 10; the model itself is deliberately
     deferred rather than rushed, because building it today means inlining Stage 3 blocking and Stage 4
     gamma logic into a **diagnostic**, which then has to be re-pointed when those stages land.
+
+81. **The model JSON carries SQL in two places and §1.5 policed one of them.** `_sql_conditions()` walked
+    comparison levels; `blocking_rules_to_generate_predictions[].blocking_rule` was never validated —
+    while `er_blocking_sql` interpolates it directly as `{{ rule }}` and executes it with the consumer's
+    credentials. That is precisely the threat DR-17 and G3 describe, in the field the whole boundary was
+    built to protect. Measured, on payloads the boundary rejects in a level:
+
+    | payload | comparison level | blocking rule |
+    |---|---|---|
+    | subquery / exfiltration shape | rejected | **ACCEPTED** |
+    | `; drop table er_stg_input` | rejected | **ACCEPTED** |
+    | `random()` | rejected | **ACCEPTED** |
+    | function outside D6's allow-list | rejected | **ACCEPTED** |
+
+    It was unreachable only because Stage 3 did not exist: nothing in the package called `er_blocking_sql`
+    with rules from a model JSON, so no test could have caught it and no gate was wrong. **PD-4 is what
+    makes it reachable**, which is why it was closed before the model rather than alongside it. Both
+    fields now run through one code path — two paths with two policies is how one of them ends up with no
+    policy at all.
+
+    **The first fix was worse than the gap.** For a shape the reader did not recognise it yielded
+    `repr(rule)` and let `_check_condition` judge the result — but `repr(None)` is `"None"` and `repr(42)`
+    is `"42"`, both of which sqlglot parses happily as an identifier and a literal. Malformed input became
+    *innocuous SQL* and passed. Turning input a validator cannot read into input it approves of is the
+    exact failure the boundary exists to prevent, committed inside the repair. Unrecognised shapes are now
+    `ER-037`.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both

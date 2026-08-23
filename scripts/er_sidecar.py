@@ -191,6 +191,49 @@ def _sql_conditions(model: dict[str, Any]) -> Iterator[tuple[str, str]]:
                 yield f"{name}.level[{l_index}]", condition
 
 
+def _blocking_rules(model: dict[str, Any]) -> Iterator[tuple[str, str | None]]:
+    """Yield `(where, blocking_rule)` for every blocking rule.
+
+    **The model JSON carries SQL in TWO places, and §1.5 policed one of them.**
+    `blocking_rules_to_generate_predictions[].blocking_rule` is interpolated
+    into `er_blocking_sql` as `{{ rule }}` and executed with the consumer's
+    credentials -- the exact threat DR-17 and G3 describe -- while
+    `_sql_conditions()` walked only comparison levels.
+
+    Measured before the fix, on payloads the boundary rejects in a level:
+
+        subquery / exfiltration shape   level=rejected   blocking_rule=ACCEPTED
+        statement terminator            level=rejected   blocking_rule=ACCEPTED
+        non-deterministic function      level=rejected   blocking_rule=ACCEPTED
+        function outside the D6 list    level=rejected   blocking_rule=ACCEPTED
+
+    The hole was unreachable only because Stage 3 did not exist yet -- nothing
+    in the package called `er_blocking_sql` with rules from a model JSON. It
+    becomes reachable the moment that stage ships, which is why it is closed
+    first (D.0 finding 81).
+
+    Splink also accepts a bare string here rather than the `{blocking_rule,
+    sql_dialect}` mapping, so both shapes are read.
+
+    A shape this function does not recognise yields `None`, which the caller
+    turns into a finding. The first fix yielded `repr(rule)` and let
+    `_check_condition` judge it -- which is worse than useless: `repr(None)` is
+    `"None"` and `repr(42)` is `"42"`, both of which sqlglot parses happily as
+    an identifier and a literal, so a malformed rule became *innocuous SQL* and
+    passed. Turning input the validator does not understand into input it
+    approves of is the failure this whole boundary exists to prevent.
+    """
+    for index, rule in enumerate(model.get("blocking_rules_to_generate_predictions") or []):
+        where = f"blocking_rules_to_generate_predictions[{index}]"
+        if isinstance(rule, str):
+            yield where, (rule if rule.strip() else None)
+        elif isinstance(rule, dict):
+            condition = rule.get("blocking_rule")
+            yield where, (condition if isinstance(condition, str) and condition.strip() else None)
+        else:
+            yield where, None
+
+
 def _check_bounds(model: dict[str, Any], raw_bytes: int, bounds: dict[str, int]) -> list[str]:
     """Rule 4. A named error rather than a pathological build."""
     findings: list[str] = []
@@ -355,8 +398,19 @@ def validate(raw: str, bounds: dict[str, int] | None = None) -> dict[str, Any]:
     findings.extend(_check_output_column_names(model))
     findings.extend(_check_probabilities(model))
     conditions = list(_sql_conditions(model))
-    for where, condition in conditions:
-        findings.extend(_check_condition(where, condition))
+    rules = list(_blocking_rules(model))
+    findings.extend(
+        f"ER-037: {where} is not a blocking rule this validator understands. A "
+        f"shape it cannot read must not be treated as absent -- that is how "
+        f"`blocking_rule` went unpoliced in the first place (§1.5, D.0 81)."
+        for where, condition in rules
+        if condition is None
+    )
+    # Both SQL-bearing fields, through the SAME checks. Two code paths with two
+    # policies is how one of them ends up with no policy at all.
+    for where, condition in [*conditions, *rules]:
+        if condition is not None:
+            findings.extend(_check_condition(where, condition))
 
     if not conditions:
         findings.append(
@@ -373,6 +427,7 @@ def validate(raw: str, bounds: dict[str, int] | None = None) -> dict[str, Any]:
     return {
         "er_model_sha": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
         "levels_validated": len(conditions),
+        "blocking_rules_validated": len(rules),
         "comparisons": len(model.get("comparisons") or []),
         "model": model,
     }
