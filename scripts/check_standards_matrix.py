@@ -66,6 +66,44 @@ _UNENFORCED = re.compile(r"convention \(unenforced\)|unenforced", re.IGNORECASE)
 # above rather than repeat it. That is a real mechanism, named by reference.
 _CROSS_REF = re.compile(r"^same\b|^\d\.\d+\s*\+|^see\b", re.IGNORECASE)
 
+# Dashed lowercase tokens that are NOT pre-commit hook ids. Written out and
+# capped rather than widening the pattern, so the exceptions stay auditable --
+# the same discipline section 18 applies to waivers.
+_NOT_HOOK_IDS = frozenset(
+    {
+        "dbt-core",
+        "dbt-duckdb",
+        "dbt-bouncer",
+        "dbt-utils",
+        "dbt-osmosis",
+        "sqlfluff-templater-dbt",
+        "pre-commit",
+        "ubuntu-24.04",
+        "linux-amd64",
+        "run-operation",
+        "full-refresh",
+        "store-failures",
+        "check-name",
+        "entity-grain",
+        "pair-grain",
+        # dbt concepts, not hooks.
+        "on-run-end",
+        "on-run-start",
+    }
+)
+
+# A pre-commit hook id: lowercase words joined by dashes, nothing else.
+_HOOK_SHAPED = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9.]+)+$")
+
+# yamllint's own rule names, so a cited-but-unconfigured rule is caught rather
+# than mistaken for a missing pre-commit hook.
+_YAMLLINT_KNOWN = re.compile(
+    r"^(empty-values|key-duplicates|line-length|truthy|comments|comments-indentation"
+    r"|quoted-strings|braces|brackets|colons|commas|document-start|document-end"
+    r"|empty-lines|hyphens|indentation|new-line-at-end-of-file|octal-values"
+    r"|trailing-spaces|new-lines|key-ordering|float-values|anchors)$"
+)
+
 # Cited by the matrix but owned elsewhere: dbt's own features, not our wiring.
 _NOT_OUR_ARTEFACTS = frozenset(
     {
@@ -178,6 +216,18 @@ def _precommit_hook_ids(path: Path) -> set[str]:
     }
 
 
+def _yamllint_rules(path: Path) -> tuple[set[str], set[str]]:
+    """Return `(configured, disabled)` yamllint rule names."""
+    if not path.is_file():
+        return set(), set()
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    rules = loaded.get("rules") or {}
+    if not isinstance(rules, dict):
+        return set(), set()
+    disabled = {name for name, value in rules.items() if value == "disable"}
+    return set(rules), disabled
+
+
 def _sqlfluff_disabled(path: Path) -> set[str]:
     """Rule codes switched off in `.sqlfluff` -- `exclude_rules` and friends."""
     if not path.is_file():
@@ -202,6 +252,8 @@ class _Wiring:
     installed: set[str]
     hooks: set[str]
     disabled: set[str]
+    yamllint_rules: set[str]
+    yamllint_disabled: set[str]
 
     @classmethod
     def load(cls, root: Path) -> _Wiring:
@@ -211,10 +263,18 @@ class _Wiring:
             installed=_installed_bouncer_checks(),
             hooks=_precommit_hook_ids(root / ".pre-commit-config.yaml"),
             disabled=_sqlfluff_disabled(root / ".sqlfluff"),
+            yamllint_rules=_yamllint_rules(root / ".yamllint.yml")[0],
+            yamllint_disabled=_yamllint_rules(root / ".yamllint.yml")[1],
         )
 
-    def classify(self, token: str) -> str | None:
-        """Return an error for `token`, or None when it resolves or is prose."""
+    def classify(self, token: str) -> str | None:  # noqa: PLR0911
+        """Return an error for `token`, or None when it resolves or is prose.
+
+        One branch per citation kind, and the count IS the coverage: paths,
+        SQLFluff codes, dbt-bouncer checks, yamllint rules, pre-commit hooks.
+        Collapsing them into a table would hide which kinds are checked at all,
+        which is the property 3.39 exists to make visible.
+        """
         if token in _NOT_OUR_ARTEFACTS or token.startswith(("+", "{{", "--")):
             return None
         if token.endswith((".py", ".yml", ".yaml", ".toml")) or token in _BARE_CONFIGS:
@@ -223,7 +283,9 @@ class _Wiring:
             return self._as_sqlfluff_rule(token)
         if token.startswith("check_"):
             return self._as_bouncer_check(token)
-        if token.startswith("er-"):
+        if token in self.yamllint_rules or _YAMLLINT_KNOWN.match(token):
+            return self._as_yamllint_rule(token)
+        if _HOOK_SHAPED.match(token) and token not in _NOT_HOOK_IDS:
             return self._as_hook(token)
         return None
 
@@ -239,6 +301,29 @@ class _Wiring:
         if "/" not in token and any(self.root.rglob(token)):
             return None
         return f"cites `{token}`, which does not exist at {rel(self.root / token, self.root)}"
+
+    def _as_yamllint_rule(self, token: str) -> str | None:
+        """Resolve a yamllint rule, which must be ENABLED and not merely mentioned.
+
+        §11.4 says two rules carry the weight -- `empty-values` and
+        `key-duplicates` -- and §10.4 calls the first "the gate contracts cannot
+        provide". Both were invisible to 3.39 before this: they are dashed
+        lowercase tokens, so they read as pre-commit hook ids that were not
+        configured, and before *that* they read as prose.
+        """
+        if token in self.yamllint_disabled:
+            return (
+                f"cites yamllint rule `{token}`, which `.yamllint.yml` sets to "
+                f"`disable`. A standard whose mechanism is switched off is not "
+                f"enforced"
+            )
+        if token not in self.yamllint_rules:
+            return (
+                f"cites yamllint rule `{token}`, which `.yamllint.yml` does not "
+                f"configure. It inherits from `extends: default`, so state it "
+                f"explicitly if a standard depends on it"
+            )
+        return None
 
     def _as_sqlfluff_rule(self, token: str) -> str | None:
         if token in self.disabled:
@@ -264,9 +349,21 @@ class _Wiring:
         )
 
     def _as_hook(self, token: str) -> str | None:
-        if token in self.hooks or token.count("-") < _MIN_HOOK_DASHES:
+        """Resolve a pre-commit hook id.
+
+        Previously this was reached only for `er-` prefixed tokens, which meant
+        every UPSTREAM hook the matrix cites -- `detect-private-key`,
+        `check-added-large-files`, `no-commit-to-branch` -- fell through as
+        prose and resolved by default. That is how 3.55 could name a mechanism
+        that was only half-present and still satisfy 3.39.
+        """
+        if token in self.hooks:
             return None
-        return f"cites pre-commit hook `{token}`, which is not in .pre-commit-config.yaml"
+        return (
+            f"cites pre-commit hook `{token}`, which is not configured in "
+            f".pre-commit-config.yaml. If it is not a hook id, add it to "
+            f"_NOT_HOOK_IDS with a reason"
+        )
 
 
 def _citations(mechanism: str) -> Iterable[str]:

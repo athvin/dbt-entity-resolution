@@ -346,6 +346,14 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.55",
+        what="put a consumer email provider in a fixture",
+        mutate="append:fixtures/degenerate/single_row.csv:"
+        "a-9,Real,Person,1980-01-01,Leeds,real.person@gmail.com\n",
+        command=("python", "scripts/check_pii_heuristics.py"),
+        expect="consumer provider",
+    ),
+    Injection(
         standard="3.62",
         what="add a baseline with no provenance sidecar",
         mutate="write:fixtures/fake_1000/baseline_edges.parquet:not-really-parquet",

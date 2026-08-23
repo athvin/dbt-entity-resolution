@@ -32,6 +32,7 @@ import check_canonical_homes  # noqa: E402
 import check_divergence_log  # noqa: E402
 import check_flags_parity  # noqa: E402
 import check_no_nondeterminism  # noqa: E402
+import check_pii_heuristics  # noqa: E402
 import check_root_packages_minimal  # noqa: E402
 import check_standards_matrix  # noqa: E402
 import check_unit_test_fixtures  # noqa: E402
@@ -849,3 +850,74 @@ def test_the_degenerate_corpus_set_is_complete(tmp_path: Path) -> None:
         "null_unique_id",
         "shared_unique_id",
     }
+
+
+# ---------------------------------------------------------------------------
+# 3.55 -- fixtures are synthetic, and say so.
+# ---------------------------------------------------------------------------
+
+
+def test_pii_heuristics_pass_on_the_real_repository() -> None:
+    assert check_pii_heuristics.check(ROOT) == []
+
+
+def test_pii_requires_an_explicit_synthetic_declaration(tmp_path: Path) -> None:
+    """The primary control: a person asserts it, a heuristic cannot prove it."""
+    scratch = _mirror(tmp_path)
+    sidecar = scratch / "fixtures" / "source" / "fake_1000.csv.manifest.yml"
+    sidecar.write_text(sidecar.read_text().replace("synthetic: true", "synthetic: false"))
+    errors = check_pii_heuristics.check(scratch)
+    assert any("no sidecar manifest declaring" in e for e in errors)
+
+
+def test_pii_detects_a_consumer_email_provider(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    csv_path = scratch / "fixtures" / "degenerate" / "single_row.csv"
+    csv_path.write_text(csv_path.read_text().replace("robert255@smith.net", "r.smith@gmail.com"))
+    errors = check_pii_heuristics.check(scratch)
+    assert any("gmail.com" in e and "consumer provider" in e for e in errors)
+
+
+def test_pii_detects_a_luhn_valid_card_number(tmp_path: Path) -> None:
+    """A well-formed identifier is indistinguishable from a real one."""
+    scratch = _mirror(tmp_path)
+    csv_path = scratch / "fixtures" / "degenerate" / "single_row.csv"
+    csv_path.write_text(
+        csv_path.read_text() + "a-2,Card,Holder,1980-01-01,Leeds,4111111111111111\n"
+    )
+    errors = check_pii_heuristics.check(scratch)
+    assert any("Luhn checksum" in e for e in errors)
+
+
+def test_pii_ignores_a_digit_run_that_fails_luhn(tmp_path: Path) -> None:
+    """Precision matters: a 16-digit id that is not card-shaped is not a finding."""
+    scratch = _mirror(tmp_path)
+    csv_path = scratch / "fixtures" / "degenerate" / "single_row.csv"
+    csv_path.write_text(csv_path.read_text() + "a-2,Ref,Number,1980-01-01,Leeds,1234567890123456\n")
+    assert check_pii_heuristics.check(scratch) == []
+
+
+def test_pii_detects_a_national_insurance_number(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    csv_path = scratch / "fixtures" / "degenerate" / "single_row.csv"
+    # QQ is not a valid NI prefix (D/F/I/Q/U/V are never issued), so the regex
+    # rightly ignores it -- the test datum has to be a well-formed one.
+    csv_path.write_text(csv_path.read_text() + "a-2,Nat,Ins,1980-01-01,Leeds,AB123456C\n")
+    errors = check_pii_heuristics.check(scratch)
+    assert any("National Insurance" in e for e in errors)
+
+
+def test_pii_detects_an_ssn(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    csv_path = scratch / "fixtures" / "degenerate" / "single_row.csv"
+    csv_path.write_text(csv_path.read_text() + "a-2,Soc,Sec,1980-01-01,Leeds,123-45-6789\n")
+    errors = check_pii_heuristics.check(scratch)
+    assert any("SSN" in e for e in errors)
+
+
+def test_pii_fails_loudly_when_it_has_nothing_to_scan(tmp_path: Path) -> None:
+    """A scan that walks an empty tree exits 0 and reads as a pass."""
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    errors = check_pii_heuristics.check(bare)
+    assert any("reads as a pass" in e for e in errors)

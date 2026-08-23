@@ -127,7 +127,8 @@ repo-checks:
 	         check_root_packages_minimal check_workflow_hardening \
 	         check_standards_matrix check_verified_markers \
 	         check_divergence_log check_baseline_manifests \
-	         check_unit_test_fixtures check_canonical_homes; do \
+	         check_unit_test_fixtures check_canonical_homes \
+	         check_pii_heuristics; do \
 		if [ -f "scripts/$$s.py" ]; then \
 			echo "  running scripts/$$s.py"; \
 			uv run python "scripts/$$s.py"; \
@@ -137,7 +138,7 @@ repo-checks:
 		fi; \
 	done; \
 	if [ "$$missing" -gt 0 ]; then \
-		echo "repo-checks: $$missing of 11 enforcement scripts are not written yet."; \
+		echo "repo-checks: $$missing of 12 enforcement scripts are not written yet."; \
 		echo "Waiver B-1 (Appendix D.1) covers the bootstrap interval."; \
 	fi
 
