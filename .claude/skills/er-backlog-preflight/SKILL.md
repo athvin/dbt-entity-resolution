@@ -42,7 +42,7 @@ Four classes, in this order. The class decides the ticket type and the urgency.
 
 **Class A — CONFLICT.** Two normative statements disagree. Nothing downstream can be planned from either. Currently: **DR-11** (§5 against A.5 — the stage inventory itself). A CONFLICT is not a decision to make; it is a reconciliation to perform, and the reconciliation has a defined scope (R3, extended by RC29).
 
-**Class B — MISSING.** A decision that was never made and has no row value. Currently **DR-16** (input contract); DR-18/19/20 are partially answered by the companion per RC30 — check that note before treating them as fully missing. *(DR-17, the model JSON trust boundary, closed CURRENT 2026-08-23 — `DesignDoc.md` §1.5.)*
+**Class B — MISSING.** A decision that was never made and has no row value. **None is missing in full any more.** DR-18/19/20 remain, and RC30 records that all three are *partially* answered by the companion — check that note and scope each to its residue rather than treating it as untouched. *(DR-16, the input contract, and DR-17, the model JSON trust boundary, both closed CURRENT 2026-08-23 — `DesignDoc.md` §2.0 and §1.5.)*
 
 **Class C — OPEN with a fired deadline.** An open row whose stated trigger has already passed. These are the dangerous ones, because they get resolved by drift:
 - **B.1** (runtime substrate) — "must be settled before the harness lands", and the harness is Stage 0.3. RC45: the C.3 `profiles.yml` is already option-(b)-shaped, so scaffolding rebuilds it verbatim and B.1 resolves itself.
@@ -58,7 +58,7 @@ For each blocker record: **id · class · what it blocks · who the doc says own
 RC8 names five "do this first" instructions and proposes the order below. It is a **review-note proposal, not a normative section** — present it as the recommended sequence and say where it comes from.
 
 1. ~~**Close DR-11 / R3**~~ — **done 2026-08-23.** `DesignDoc.md` §5 is now the single stage inventory.
-2. ~~**Decide DR-17 / G3**~~ — **done 2026-08-23**, §1.5. Disposition the remaining MISSING rows: only DR-16 is missing in full.
+2. ~~**Decide DR-17 / G3**~~ — **done 2026-08-23**, §1.5. ~~**Close DR-16 / G2+G9**~~ — **done 2026-08-23**, §2.0. No row is MISSING in full; DR-18/19/20 need scoping to their residue.
 3. **Settle `DbtBestPractices.md` B.1** — its own text says it must precede the Stage 0.3 harness.
 4. **Rebuild the engineering scaffold** from `DbtBestPractices.md` Appendix C with the v2 delta tables applied. Appendix D records that the verified scaffold was deleted, so Appendix C is currently the only copy. This step appears in *no* task list in either document.
 5. **Build the comparator sensitivity suite** (A.5 Stage 0.7). §12.7: *"the one standard in the document that should be built before the thing it guards"* — before Stage 0.4 freezes baselines against it.
