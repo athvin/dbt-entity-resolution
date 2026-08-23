@@ -353,6 +353,13 @@ INJECTIONS: tuple[Injection, ...] = (
         expect="no sidecar at",
     ),
     Injection(
+        standard="3.62",
+        what="tamper with a vendored fixture, leaving its recorded sha256 in place",
+        mutate="append:fixtures/source/fake_1000.csv:tampered,row,here,,,,\n",
+        command=("python", "scripts/check_baseline_manifests.py"),
+        expect="unattributable",
+    ),
+    Injection(
         standard="3.69",
         what="declare a unit-test fixture `format: dict`",
         mutate="noop",

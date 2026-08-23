@@ -1,0 +1,66 @@
+dbt-entity-resolution
+Copyright (c) 2026 AthVIN
+Licensed under the MIT License; see LICENSE.
+
+================================================================================
+Third-party material redistributed in this repository
+================================================================================
+
+This project vendors one third-party data file. The MIT License requires the
+copyright notice and permission notice to travel with copies, which is what this
+file is for (§24).
+
+--------------------------------------------------------------------------------
+fixtures/source/fake_1000.csv
+--------------------------------------------------------------------------------
+
+  From:      https://github.com/moj-analytical-services/splink_datasets
+  File:      data/fake_1000.csv
+  Licence:   MIT
+  Copyright: Copyright (c) 2023 MoJ Analytical Services
+  sha256:    66f9b8f92b9b082ef982fe18c77030fbed8780f06ce1d40d7106be5a72392e2a
+
+  Redistributed unmodified. Provenance is recorded in the sidecar manifest
+  beside it and verified on every run by scripts/check_baseline_manifests.py
+  (3.62).
+
+  It is vendored rather than fetched because `splink_datasets.fake_1000`
+  downloads it from a mutable `master` ref at attribute-access time. A parity
+  oracle whose input arrives over the network is not a fixed oracle.
+
+    MIT License
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to
+    deal in the Software without restriction, including without limitation the
+    rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+    sell copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+================================================================================
+Splink
+================================================================================
+
+  https://github.com/moj-analytical-services/splink — MIT,
+  Copyright (c) 2020 Ministry of Justice (verified 2026-08-23, G20).
+
+  **No Splink code is vendored.** This package reimplements Splink's entity
+  resolution as pure SQL and uses Splink only as a test-time parity oracle.
+  Both design documents cite Splink source files by path and line.
+
+  The wider §24 question — whether verbatim comparison-level SQL strings
+  constitute derived work, and what the package's stated position on them is —
+  is **not settled here**. It is owned by PE-2 and must be answered before §19
+  publishes anything, which is the first time anyone outside this repository
+  installs the package.

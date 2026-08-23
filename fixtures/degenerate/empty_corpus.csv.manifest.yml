@@ -1,0 +1,16 @@
+---
+# Provenance for a HAND-AUTHORED degenerate fixture (3.62, G9).
+#
+# Section 5 Stage 0.2 requires the degenerate-corpus set: empty corpus, single
+# row, all-identical records, an all-NULL blocking column, a NULL unique_id, and
+# two records sharing a unique_id. `fake_1000` exercises none of them, and each
+# is a shape where a pipeline can report success while computing nothing.
+kind: synthetic
+path: empty_corpus.csv
+authored: 2026-08-23
+generator: hand-authored
+shape: 0 records
+probes: >-
+  An empty corpus. Section 12.7's vacuity failure at the source: every downstream count is
+  zero, every comparison is zero-to-zero, and a pipeline that reports success here reports
+  success on nothing.

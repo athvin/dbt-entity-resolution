@@ -1,0 +1,4 @@
+unique_id,first_name,surname,dob,city,email
+dup-1,Robert,Alan,1971-06-24,London,r@smith.net
+dup-1,Rob,Allen,1971-06-24,London,r@smith.net
+b-2,Zara,Young,1988-01-02,Leeds,z@young.net

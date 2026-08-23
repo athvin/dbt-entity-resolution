@@ -372,6 +372,7 @@ _MIRROR = (
     "packages.yml",
     "dbt_project.yml",
     "package-lock.yml",
+    "fixtures",
     "integration_tests",
 )
 
@@ -421,6 +422,7 @@ def _drop_pending(scratch: Path, path: str) -> None:
 
 def _complete_manifest() -> dict[str, Any]:
     return {
+        "kind": "baseline",
         "splink_version": "4.0.16",
         "model_json_sha256": "a" * 64,
         "seed": 42,
@@ -438,7 +440,6 @@ def _write_baseline(scratch: Path, manifest: dict[str, Any]) -> None:
     baseline.write_text("not-really-parquet")
     sidecar = baseline.with_suffix(baseline.suffix + ".manifest.yml")
     sidecar.write_text(yaml.safe_dump(manifest), encoding="utf-8")
-    _drop_pending(scratch, "fixtures")
 
 
 # ---------------------------------------------------------------------------
@@ -641,8 +642,15 @@ def test_baseline_manifests_accepts_a_complete_sidecar(tmp_path: Path) -> None:
 
 
 def test_baseline_manifests_rejects_an_empty_fixtures_directory(tmp_path: Path) -> None:
-    """An empty walk exits 0 and reads as a pass."""
-    scratch = _mirror(tmp_path)
+    """An empty walk exits 0 and reads as a pass.
+
+    Built from a bare tree rather than `_mirror`, because the repository now HAS
+    vendored fixtures -- the case under test is a `fixtures/` that exists and
+    holds nothing.
+    """
+    scratch = tmp_path / "bare"
+    (scratch / "scripts").mkdir(parents=True)
+    (scratch / "scripts" / "pending_subjects.yml").write_text("---\npending: []\n")
     (scratch / "fixtures").mkdir()
     errors = check_baseline_manifests.check(scratch)
     assert any("contains no baselines" in e for e in errors)
@@ -783,3 +791,61 @@ def test_canonical_homes_ignores_a_block_under_a_heading_naming_no_live_file(
     doc = scratch / "docs" / "DbtBestPractices.md"
     doc.write_text(doc.read_text() + "\n\n### An illustration\n\n```sql\nselect 1\n```\n")
     assert check_canonical_homes.check(scratch) == []
+
+
+# ---------------------------------------------------------------------------
+# 3.62, extended -- vendored and hand-authored fixtures (PC-1 / G9).
+# ---------------------------------------------------------------------------
+
+
+def _fixtures(scratch: Path) -> Path:
+    return scratch / "fixtures"
+
+
+def test_baseline_manifests_verify_a_vendored_sha(tmp_path: Path) -> None:
+    """A recorded hash nobody checks is provenance in name only."""
+    scratch = _mirror(tmp_path)
+    csv = _fixtures(scratch) / "source" / "fake_1000.csv"
+    csv.write_bytes(csv.read_bytes() + b"tampered\n")
+    errors = check_baseline_manifests.check(scratch)
+    assert any("disagree" in e and "unattributable" in e for e in errors)
+
+
+def test_baseline_manifests_reject_an_unknown_kind(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    sidecar = _fixtures(scratch) / "source" / "fake_1000.csv.manifest.yml"
+    sidecar.write_text(sidecar.read_text().replace("kind: vendored", "kind: mystery"))
+    errors = check_baseline_manifests.check(scratch)
+    assert any("expected one of" in e for e in errors)
+
+
+def test_baseline_manifests_require_vendored_provenance_fields(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    sidecar = _fixtures(scratch) / "source" / "fake_1000.csv.manifest.yml"
+    sidecar.write_text(sidecar.read_text().replace("licence: MIT", "licence:"))
+    errors = check_baseline_manifests.check(scratch)
+    assert any("missing `licence`" in e for e in errors)
+
+
+def test_baseline_manifests_require_what_a_degenerate_fixture_probes(tmp_path: Path) -> None:
+    """A degenerate corpus with no stated purpose is an unexplained file."""
+    scratch = _mirror(tmp_path)
+    sidecar = _fixtures(scratch) / "degenerate" / "shared_unique_id.csv.manifest.yml"
+    body = sidecar.read_text()
+    sidecar.write_text(body[: body.index("probes:")])
+    errors = check_baseline_manifests.check(scratch)
+    assert any("missing `probes`" in e for e in errors)
+
+
+def test_the_degenerate_corpus_set_is_complete(tmp_path: Path) -> None:
+    """G9 names six shapes; deleting one must be a failure, not a smaller suite."""
+    scratch = _mirror(tmp_path)
+    present = {p.stem for p in (_fixtures(scratch) / "degenerate").glob("*.csv")}
+    assert present == {
+        "empty_corpus",
+        "single_row",
+        "all_identical",
+        "all_null_blocking_column",
+        "null_unique_id",
+        "shared_unique_id",
+    }

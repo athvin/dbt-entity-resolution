@@ -1,0 +1,17 @@
+---
+# Provenance for a HAND-AUTHORED degenerate fixture (3.62, G9).
+#
+# Section 5 Stage 0.2 requires the degenerate-corpus set: empty corpus, single
+# row, all-identical records, an all-NULL blocking column, a NULL unique_id, and
+# two records sharing a unique_id. `fake_1000` exercises none of them, and each
+# is a shape where a pipeline can report success while computing nothing.
+kind: synthetic
+path: shared_unique_id.csv
+authored: 2026-08-23
+generator: hand-authored
+shape: 3 records, 2 sharing an id, 0 pairs between them under D3
+probes: >-
+  Two records sharing `unique_id = dup-1`. **G9's finding, and the reason this set exists**:
+  D3's strict `l.<uid> < r.<uid>` means two records with the SAME id never pair with each
+  other, so the match most likely to matter is silently suppressed. Section 2.0 makes
+  `unique_id` UNIQUE so this fails loudly instead.

@@ -463,7 +463,10 @@ dbt-entity-resolution/
 │
 ├── harness/                     # pytest parity harness (DesignDoc Stage 0)
 │   └── mutants/                 # the comparator sensitivity catalogue -- 3.46, section 12.7
-├── fixtures/                    # model JSONs, Splink baselines, each with a .manifest.yml (3.62)
+├── fixtures/                    # each artefact carries a .manifest.yml (3.62)
+│   ├── source/                  # VENDORED, sha-verified. splink_datasets downloads
+│   │                            # fake_1000 from a mutable ref at access time.
+│   └── degenerate/              # G9's six shapes fake_1000 never exercises
 └── docs/
     ├── DesignDoc.md             # what the SQL computes
     ├── DbtBestPractices.md      # this file -- how the repo stays correct
@@ -3352,6 +3355,23 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     happened to survive. Both facts are engine behaviour scoped to the pin, and
     `harness/test_duckdb_expression_semantics.py` fails on a DuckDB bump that folds differently, including
     a guard proving its own counter can tell two evaluations from one.
+
+37. **The parity oracle's input was arriving over the network, from a mutable ref.**
+    `splink_datasets.fake_1000` is not bundled with the splink wheel — attribute access
+    **downloads** `data/fake_1000.csv` from `raw.githubusercontent.com` at `master`. Every baseline
+    generated through that accessor would have depended on a live fetch from a ref that can change, and
+    nothing would have noticed if it did: the manifest §20.1 specifies records the *model JSON's* sha, not
+    the *fixture's*. §5 Stage 0.2's word is **"vendor"**, and this is what it is for. The file is now
+    committed at `fixtures/source/fake_1000.csv` with its sha256, and 3.62 **verifies the hash on every
+    run** — a recorded hash nobody checks is provenance in name only, the same defect class as a
+    `[VERIFIED]` marker nobody re-earns.
+
+38. **3.62 needed a `kind`, because three artefacts under `fixtures/` cannot share one field list.** A
+    generated baseline records *how it was produced* (§20.1's eight fields); a vendored file records
+    *where it came from* (source URL, sha, licence, copyright); a hand-authored degenerate corpus records
+    *what it probes*. Requiring §20.1's fields of a vendored CSV would have been noise, and requiring none
+    of them would have been vacuous — so the manifest declares its kind and the check dispatches on it. An
+    unknown kind is an error, not a default.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both

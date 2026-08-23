@@ -1526,6 +1526,11 @@ worth stating twice:
 - 0.2 Vendor `fake_1000`; seeded synthetic generator. Include the **degenerate-corpus fixture set** G9
   asks for: empty corpus, single row, all-identical records, an all-NULL blocking column, a NULL
   `unique_id`, and two records sharing a `unique_id`.
+  **Partially done 2026-08-23 (PC-1).** `fake_1000` is vendored at `fixtures/source/` with a sha-verified
+  manifest — *not* read through `splink_datasets`, which downloads it from a mutable `master` ref at
+  attribute-access time (Appendix D.0 finding 37). All six degenerate corpora exist under
+  `fixtures/degenerate/`, each with a manifest stating what it probes. **The seeded synthetic generator is
+  still outstanding** and is what `er_max_pairs` (0.6) and the scale work will need.
 - 0.3 `gen_baseline.py` dumping every intermediate as parquet with a manifest.
   **Normative: baselines are generated from a model JSON that has been saved and reloaded** (§3.4).
   The baseline format must carry, **from day one**, everything a later stage will need — retrofitting it
