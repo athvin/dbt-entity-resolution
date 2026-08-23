@@ -1,0 +1,30 @@
+---
+# Provenance for a REVIEWED SNAPSHOT (3.62, Stage 1 AC).
+#
+# This is Splink 4.0.16's OWN blocking SQL, captured from
+# `splink.internals.blocking.block_using_rules_sqls` -- not a transcription of
+# D2's prose. That is what makes the macro test a PARITY test rather than a
+# formatting test: if Splink changes shape, this file changes and the macro is
+# shown to have diverged.
+#
+# It also settles a v1 error D2 records: v1 described "rule 2 AND NOT (rule 1)",
+# one exclusion per preceding rule. The real generator emits a SINGLE
+# `AND NOT ( ... OR ... )` over every preceding rule. The snapshot is the
+# evidence.
+kind: baseline
+# 3.55: SQL text over column names; no person data at all.
+synthetic: true
+splink_version: "4.0.16"
+model_json_sha256: "02ede04136994e937fa685b0e8beaf1b7d97ca4a8ecb8f2bd0631abcd8e21c44"
+seed: 20260823
+duckdb_version: "1.5.5"
+sqlglot_version: "30.17.0"
+platform:
+  os: "darwin"
+  architecture: "arm64"
+  duckdb_build: "1.5.5"
+date: "2026-08-23"
+producing_commit: "b68c913"
+captured_from: >-
+  splink.internals.blocking.block_using_rules_sqls, dedupe_only, four
+  block_on rules (first_name, surname, dob, email)

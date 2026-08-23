@@ -39,7 +39,12 @@ FIXTURES = "fixtures"
 # `splink_datasets.fake_1000` downloads from a mutable `master` ref at
 # attribute-access time, so without a recorded hash "fake_1000" names whatever
 # that URL served most recently.
-_BASELINE_SUFFIXES = (".parquet", ".json", ".csv")
+#
+# `.sql` is here because a REVIEWED SNAPSHOT is a baseline: Stage 1's AC compares
+# rendered SQL against Splink's own captured output, so the snapshot needs the
+# same provenance as a parquet -- which Splink version produced it, and from
+# which model JSON.
+_BASELINE_SUFFIXES = (".parquet", ".json", ".csv", ".sql")
 
 # Three kinds of artefact live under fixtures/, and they cannot share one field
 # list: a generated baseline records how it was produced, a vendored file
