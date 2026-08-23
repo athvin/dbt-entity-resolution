@@ -180,6 +180,80 @@ compilation naming the function; a model JSON exceeding a bound fails compilatio
 
 ## 2. What Splink does, as data transformations
 
+### 2.0 The input contract
+
+**Normative. Closes G2 and G9. Register row: DR-16.**
+
+Every model in the DAG derives from `stg_input`, and until now nothing said how a consumer supplies data to
+it. This is the one interface every user touches, and it was the only major interface with no
+specification. What follows is that specification.
+
+**Wiring: a relation-name var, and the package ships zero sources.** The consumer sets
+`er_input_relation` to a fully-qualified relation name; the package reads it at parse time. A `source()`
+declared inside the package would force its database and schema onto every consumer and trips
+`source-override-deprecation` on dbt-core 1.12.2 (M4b), and `ref()` cannot reach a relation the package
+does not own.
+
+The cost of that choice is real and is the consumer's to manage: **a relation name creates no DAG edge**,
+so nothing orders the input's construction before `stg_input` builds. §15 records the same hazard for
+seeds. The contract states it rather than leaving it to be discovered: *the consumer is responsible for the
+input relation existing and being complete before `dbt build` runs.*
+
+**Arity: exactly one relation, in v1.** Splink's `vertically_concatenate` unions its input tables, and §2's
+table describes `stg_input` as a *"bare `UNION ALL` passthrough"* for that reason. **Under Stage 12.1's
+supported-configuration matrix — `dedupe_only`, no `source_dataset` — there is exactly one input table, so
+the union degenerates to a plain select.** v1 therefore takes one relation and does not need a list var, an
+arity decision, or an owner for the union.
+
+That question returns with `link_only` / `link_and_dedupe` in v2, and the answer is recorded now because it
+is load-bearing for correctness rather than ergonomics: **the consumer owns the union.** §3.5 requires term
+frequency to be computed over the *global* concat, and only the consumer knows what "global" means for
+their corpus. A list var in the package would let per-source TF be assembled by accident, and the failure is
+invisible — every adjusted comparison off by a uniform bit shift, which is the exact defect §3.5 exists to
+prevent.
+
+**The column contract.**
+
+| Column | Requirement |
+|---|---|
+| `unique_id` | **VARCHAR**, `NOT NULL`, `UNIQUE`. The type is a correctness fact, not a convention — D3's pair ordering is lexicographic, and `'ds-__-9' < 'ds-__-100'` is false where `9 < 100` is true, so a BIGINT id and a VARCHAR id are different products |
+| Every column named in the model JSON | Must exist. Types are whatever the comparison expressions require; the contract asserts **presence**, and lets the expression own the type, because only the expression knows what it needs |
+| Anything else | Passes through untouched (D8). `stg_input` performs no transformation, and the **Caveats** section of its properties file says why |
+
+The declared input column set is itself a **parse-time var**, `er_input_columns`. That is D1's corollary —
+*every column name is a pure function of the model JSON, derived at parse time, never introspected* —
+applied to inputs, where it was previously written only for outputs.
+
+`unique_id`'s VARCHAR requirement was previously stated only in passing inside Stage 12.1, a cutover stage,
+which is not where a reader looks for an input contract. It is hoisted here, which is also what G18 asks
+for the rest of that matrix.
+
+**Missing columns fail at compile time, naming the column.** A compile-time check asserts that every column
+the model JSON references appears in `er_input_columns`. Without it the failure is a DuckDB `Binder Error`
+raised from inside a generated `CASE`, hundreds of lines into compiled SQL, naming a column the user never
+wrote. This error belongs in G13's catalogue with a stable id, alongside the preconditions below.
+
+**Preconditions, normative and testable — and they ship as tests in the package**, so they fail in a
+consumer's build rather than only in this repository's CI:
+
+| Precondition | Enforced by | Why it is not merely hygiene |
+|---|---|---|
+| `unique_id` is **unique** | A dbt test in the package, plus the `PRIMARY KEY` constraint `DbtBestPractices.md` §8.2 already puts on `er_stg_input` | **This is the one that fails silently.** D3's predicate is `l.<uid> < r.<uid>`, so two records sharing an id **never pair with each other** — strict inequality excludes them. A duplicated id removes exactly the match most likely to matter, with no error and no warning, and the symptom is a recall miss indistinguishable from a blocking gap, which M12's recall floor would blame on the blocking rules |
+| `unique_id` is **not null** | `NOT NULL` constraint — DuckDB enforces it (§8.2) | A NULL id propagates into blocking and into D4's node seed, where Splink's own spurious-NULL-row defect already lives |
+| The corpus is **non-empty** | A singular test in the package | An empty corpus produces a green build over zero rows — §12.7's vacuity, arriving through the front door |
+
+Stage 0.2's degenerate-corpus fixture set exercises these alongside the ones that are merely awkward:
+single-row, all-identical (worst-case pair explosion against B1's ceiling), and an all-NULL blocking column.
+D4's spike already tests the degenerate *graph* shapes thoroughly — chain, star, cycle, self-loop, empty
+node table; the degenerate *corpus* shapes had no equivalent.
+
+> **Decided under delegated authority 2026-08-23.**
+> **Recommendation source:** G2's recommendation and G9's, adopted in full. The v1 arity answer follows
+> from Stage 12.1 rather than from either finding.
+> **Reversible:** reopen DR-16 in §B.3.
+
+---
+
 v1's table had 7 rows and covered only the inference path. The complete non-chart surface:
 
 > **Naming.** Model names below are written unprefixed for readability. The project ships them with an
@@ -190,7 +264,7 @@ v1's table had 7 rows and covered only the inference path. The complete non-char
 
 | Splink surface | Our model(s) | SQL difficulty | Note |
 |---|---|---|---|
-| Input concat (`vertically_concatenate`) | `stg_input` | Trivial | Bare `UNION ALL` passthrough. **No transforms** — see D8. The input contract it depends on is **G2**; its preconditions are **G9**. |
+| Input concat (`vertically_concatenate`) | `stg_input` | Trivial | Bare `UNION ALL` passthrough — which degenerates to a plain select in v1, since Stage 12.1 admits exactly one input table. **No transforms** — see D8. Its contract and preconditions are **§2.0** (DR-16). |
 | Term frequency (`compute_tf_table`) | `tf_all` | Easy | Long format, not per-column. See D7. |
 | Blocking (`block_using_rules_sqls`) | `int_candidate_pairs` | Moderate | See D2. |
 | Comparison vectors | `int_comparison_vectors` | Moderate | See §3.3. |
@@ -1338,9 +1412,14 @@ against the parsed tree, the non-determinism rejection, the structural rejection
 `er_model_sha` as the hash of the *validated* artifact — are Stage 1 acceptance criteria, with the five
 negative tests §1.5 names. A build whose JSON has not passed the sidecar has no sha and does not run.
 
-**Blocked by:** **DR-16** (the input contract — G2, G9); and **`DbtBestPractices.md` B.8**, because the
-snapshot AC above reviews rendered scoring SQL containing D11 rec 4's subquery, which §11.1's
-`forbid_subquery_in = both` forbids (RC46).
+**§2.0's compile-time column check is Stage 1 work**, because it is the same pass over the model JSON that
+emits `er_gamma_columns`: every column the JSON references must appear in `er_input_columns`, and a missing
+one fails compilation naming the column rather than producing a `Binder Error` from inside a generated
+`CASE` (DR-16).
+
+**Blocked by `DbtBestPractices.md` B.8**, because the snapshot AC above reviews rendered scoring SQL
+containing D11 rec 4's subquery, which §11.1's `forbid_subquery_in = both` forbids (RC46). That is now this
+stage's only open blocker.
 
 ### Stage 2 — Staging & term frequency
 
@@ -1363,8 +1442,11 @@ join key.
   `match_weight` after unrelated records are appended to the corpus. This is the test that makes frozen
   TF meaningful rather than decorative, and it is cheap to write now and awkward to retrofit.
 
-**Blocked by DR-16** — every model here reads `stg_input`, and the input contract is what says what
-`stg_input` is allowed to be handed.
+**§2.0 is this stage's contract** (DR-16, CURRENT). `stg_input` reads the relation named by
+`er_input_relation`, performs no transformation, and carries the three preconditions as tests that ship
+with the package: `unique_id` unique and not null, corpus non-empty. The uniqueness test is the one that
+matters most — D3's `l.<uid> < r.<uid>` means two records sharing an id never pair with each other, and
+without the test that is silent.
 
 ### Stage 2b — Record lifecycle
 
@@ -2707,7 +2789,14 @@ builds have different byte costs and neither matches the published `er_max_pairs
 > measurement wins) — closing the inversion this finding diagnosed from both ends. R1 is closed; see the
 > companion's Appendix E and the review note at D11.
 
-### G2 — The package's entry point is unspecified
+### G2 — The package's entry point is unspecified · **CLOSED 2026-08-23**
+
+> **Closed by §2.0**, which adopts this finding's recommendation in full. **DR-16 is CURRENT.** All five
+> undefined things below now have answers: the wiring mechanism (a relation-name var, since M4b rules out
+> `source()`), the arity (one relation in v1, because Stage 12.1 forbids `source_dataset` — and the
+> consumer owns the union when v2 needs one, since only they know what "global" means for §3.5), the column
+> contract with `unique_id` VARCHAR hoisted out of Stage 12.1, the missing-column failure mode as a
+> compile-time error naming the column, and D1's corollary applied to inputs via `er_input_columns`.
 
 **Severity:** BLOCKER · **Attacks:** §2 (`stg_input`), D1 corollary, D8, M4(b), Stage 2 · **Scope:** in-scope
 
@@ -3021,7 +3110,14 @@ needs and Stage 12.3 already depends on.
 
 ---
 
-### G9 — Input preconditions are unstated, and the most likely one fails silently
+### G9 — Input preconditions are unstated, and the most likely one fails silently · **CLOSED 2026-08-23**
+
+> **Closed by §2.0** (DR-16), which adopts this finding's recommendation in full. The three preconditions —
+> `unique_id` unique, `unique_id` not null, corpus non-empty — are normative and ship as tests **in the
+> package**, so they fail in a consumer's build rather than only in this repository's CI. The duplicate-id
+> case is called out as the one that fails silently, with D3's strict inequality named as the mechanism.
+> Stage 0.2 carries the degenerate-corpus fixture set (§5, added 2026-08-23), which is the counterpart to
+> the degenerate-graph set D4's spike already had.
 
 **Severity:** MAJOR · **Attacks:** D3, §2 `stg_input`, Stage 3 AC, Stage 0.2 · **Scope:** in-scope
 
@@ -3481,7 +3577,7 @@ force), **SUPERSEDED** (with the pointer), **OPEN** (needs an answer), **CONFLIC
 | DR-13 | Runtime substrate | OPEN | — | M17; `DbtBestPractices.md` Appendix B.1 recommends `:memory:` + parquet |
 | DR-14 | Product posture | **CURRENT (2026-08-20)** | **Engine the platform calls** | §A.6 Q1, resolved and marked |
 | DR-15 | Supported configuration for v1 | CURRENT, not propagated | `dedupe_only`, VARCHAR id, no sds, equi-join only | Stage 12.1; **G18** |
-| DR-16 | Input contract | **MISSING** | — | **G2**, **G9** |
+| DR-16 | Input contract | **CURRENT (2026-08-23)** | **§2.0.** One relation named by `er_input_relation` (the package ships zero sources); v1 arity is one table because Stage 12.1 forbids `source_dataset`, and the consumer owns the union when v2 needs one; `unique_id` VARCHAR / NOT NULL / UNIQUE; declared columns are a parse-time var; a missing column fails at **compile time naming the column**; the three preconditions ship as tests **in the package** | Closes **G2**, **G9**. Hoists `unique_id`'s VARCHAR requirement out of Stage 12.1. The consumer owns input ordering — a relation name creates no DAG edge. **Delegated authority** — see §2.0 |
 | DR-17 | Model JSON trust boundary | **CURRENT (2026-08-23)** | **Untrusted input, validated once at compile time in the sidecar (§1.5).** D6's list is a closed allow-list checked against the *parsed* tree; non-deterministic functions, subqueries and statement terminators rejected; input bounded; `er_model_sha` is the hash of the **validated** artifact and `dbt build` refuses a JSON without one | Closes **G3**. Supersedes principle 4's unqualified "the model JSON is the contract" and D6's "lint whitelist" framing. Accepted cost: a Splink-produced JSON can fail validation — a supported-configuration boundary, not a bug. **Delegated authority** — see §1.5 |
 | DR-18 | Data classification & retention | **MISSING** | — | **G4** |
 | DR-19 | Parity claim's validity domain | **MISSING** | — | **G5** |
