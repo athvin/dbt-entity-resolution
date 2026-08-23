@@ -3875,6 +3875,20 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     **`ci-gate` went red because an upstream job did, which is the behaviour it exists for.** The single
     required status check worked on its first outing.
 
+29. **`main` went red on the first push run, and the culprit was the hook that protects `main`.**
+    C.6's `no-commit-to-branch --branch main` checks the **current branch** — and on a push-to-`main` run
+    the checkout *is* `main`, so `pre-commit run --all-files` fails every time CI runs on the base branch.
+    Every other hook passed; the job failed on that one.
+
+    This is the case §15's *"a squash commit is a SHA that never ran CI as part of the PR"* exists for: the
+    PR ran on a merge ref and was green, and the same tree on `main` was not. `main_verify.py` caught it,
+    `ci-gate` went red, and the fix was forward.
+
+    **Skipped by name in CI, not removed.** The hook guards a *developer's* `git commit`; CI never commits,
+    so it has nothing to protect there. And it is the hook that would have caught `c7ffae6` going straight
+    to `main`, so removing it to make CI green would trade a real guard for a cosmetic one — which is the
+    §21 failure mode.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`
