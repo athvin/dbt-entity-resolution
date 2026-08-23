@@ -4,7 +4,7 @@
 >
 > **DR-11 is CURRENT** and R3 is closed: §5 absorbed A.5 and is the single inventory. A.5 is retained in `DesignDoc.md` as evidence and is stale wherever the two disagree.
 >
-> Three things this file still records as open were *decided* by that reconciliation. **Stage 2b** closes as the explicit non-goal — v1 is full-rebuild, `is_incremental()` and the record-lifecycle machinery move to v2 together (§5 Stage 8). **Stage 4's** AC relaxes to *reachable* threshold constants. **`entity_clusters_1to1`** is tagged v2. The per-stage blocking decisions below — DR-16, DR-17, B.1, B.8, DR-08, DR-09, DR-12 — are still open and still block.
+> Three things this file still records as open were *decided* by that reconciliation. **Stage 2b** closes as the explicit non-goal — v1 is full-rebuild, `is_incremental()` and the record-lifecycle machinery move to v2 together (§5 Stage 8). **Stage 4's** AC relaxes to *reachable* threshold constants. **`entity_clusters_1to1`** is tagged v2. **DR-17 has since closed too** (CURRENT 2026-08-23): the model JSON is untrusted input validated once at compile time in the sidecar, per `DesignDoc.md` §1.5. The per-stage blocking decisions below that are **still open** — DR-16, B.1, B.8, DR-08, DR-09, DR-12 — still block. Check `docs/backlog/LOOP-STATE.md` for live status before trusting any "blocked by" line here.
 >
 > **Where this file and §5 disagree, §5 is right.** It is kept because its sizing table, its per-stage traps and its reusable-oracle pointers are planning material that does not live in §5 — not because it is a second inventory. Prefer §5 for *what the stages are*; use this for *what to watch out for*.
 
@@ -60,7 +60,9 @@ M21's core complaint is that three items are **spikes with real failure probabil
 
 **§5 AC:** rendered SQL for the fixture model matches reviewed snapshots; malformed JSON fails compilation with actionable errors; a level with `m_probability` absent renders `_default_m_values`, **not NULL**; `dbt compile` output has zero Jinja residue and reproduces `cast(… as float8)` wrappers.
 
-**Blocked by:** **B.8** — the snapshot AC reviews rendered scoring SQL containing D11 rec 4's subquery, which §11.1's `forbid_subquery_in = both` forbids (RC46). **DR-17** (model JSON is untrusted SQL executed with the consumer's credentials — G3). **DR-16** (input contract — G2/G9).
+**Blocked by:** **B.8** — the snapshot AC reviews rendered scoring SQL containing D11 rec 4's subquery, which §11.1's `forbid_subquery_in = both` forbids (RC46). **DR-16** (input contract — G2/G9).
+
+**DR-17 is closed and is now a Stage 1 *deliverable* rather than a blocker.** §1.5 makes the sidecar the trust boundary's enforcement point: a closed allow-list checked against the parsed tree, non-deterministic functions and subqueries rejected, the input bounded, and `er_model_sha` as the hash of the *validated* artifact — a JSON that has not passed the sidecar has no sha and does not build. Five negative tests ship with it.
 
 ---
 
