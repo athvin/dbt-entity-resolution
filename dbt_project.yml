@@ -125,7 +125,35 @@ vars:
   # measured 946 B/pair that limit would admit a 946 GB build (Appendix A, B1).
   # C.1 delta 3: this literal is re-derived by Stage 0.6's measurement, which
   # owns it. It is provisional until then.
-  er_max_pairs: 42000000
+  # Stage 0.6 / D11 rec 5, RE-DERIVED 2026-08-23 from measurement rather than
+  # carried forward. The old value, 42000000, came from a 946 B/pair WIDE shape;
+  # section 5 records that it "under-provisions the narrow one by roughly 10x".
+  #
+  # Measured on DuckDB 1.5.5 (harness/capacity.py, 200k rows), and the units
+  # matter more than the shape does:
+  #
+  #   compressible narrow   17.1 B/pair on disk   104.5 B/pair in memory
+  #   high-entropy narrow   53.8 B/pair on disk   151.7 B/pair in memory
+  #
+  # The published figures are MEMORY figures -- 104.5 reproduces section 5's
+  # "measured narrow ~100 B/pair" -- so measuring the obvious way, the size of
+  # the database file, over-provisions by about six.
+  #
+  # er_bytes_per_pair takes the CONSERVATIVE cell: high-entropy, because real
+  # names and emails do not compress like `i % 97`, and a guardrail whose
+  # failure mode is an OOM should err toward refusing work.
+  er_bytes_per_pair: 152
+  # Derived: 12 GiB memory_limit (profiles.yml default) x 0.5 / 152 B.
+  # The half is because the pair relation is not alone in memory -- the join
+  # producing it and its hash tables are there too.
+  er_max_pairs: 42384545
+  #
+  # WORTH STATING PLAINLY: this lands within 1% of the inherited 42000000 -- but
+  # for entirely different reasons. The old figure was 40 GB at 946 B/pair
+  # (wide); this is 12 GiB at 152 B/pair (narrow, high-entropy). The constant
+  # happened to be about right for the shipped configuration and would have been
+  # wrong the moment either premise moved. What changed is not the number, it is
+  # that the number is now derived from values a reader can check.
 
   # ---- quality floors (DesignDoc section 1.8, DR-22) ---------------------
   # C.1 delta 13. Committed per fixture, set at Stage 0.4 from the FIXED model,

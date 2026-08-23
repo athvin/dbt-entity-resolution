@@ -291,6 +291,16 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | 3.70 | A model's unit tests cover the case classes D12 enumerates, and each unanswered question is recorded rather than left blank | — | — | **Convention (unenforced).** A gate can count tests and can require the recorded answer; it cannot know that a `CASE` arm has no case. §12.2 states the checklist and §17 puts it in review |
 | 3.71 | A consumer's build never executes this package's unit tests | `consumer_smoke/` job (§19.3, 3.64) asserts zero `unit_test` rows in its `run_results.json`; if dbt does execute them, the package ships the documented `--exclude-resource-type unit_test` guard and the job asserts that instead | CI | Job fails |
 
+| | **— v2.5 addition (Stage 0.6 / D11 rec 5 / G14). `[VERIFIED]` against the §4 pins. —** | | | |
+| 3.74 | A pair-grain model asserts its projected size against the derived budget **before materialising** | `er_assert_pair_budget()` raises at compile time from the model itself; `er_max_pairs` is derived from `er_bytes_per_pair` and the configured memory budget, never a constant | C | `raise_compiler_error` naming the projection, the cap and both in GiB |
+
+> **On 3.74 — why it is a compile gate and not a `make` target.** G14's finding, verbatim: *"a Makefile
+> target reports; it does not stop a build."* And it can only be a hard stop, because **nothing interrupts
+> an over-large build partway** — G13 measured that DuckDB 1.5.5 exposes no statement timeout, and D4a
+> measured `USING KEY` clustering OOMing rather than degrading. `memory_limit` is the real backstop and it
+> fails hard. The cap is **derived**, so raising it to make a build pass is visibly the wrong move: it does
+> not create memory, and the message says so.
+
 | | **— v2.3 addition (Appendix D.0 finding 4). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.72 | A `unit_tests:` block is at the **top level** of its properties file, never nested under a `models:` entry | `scripts/check_unit_test_fixtures.py` rejects a `unit_tests` key inside a `models:` entry, in both project roots; the policy macro's 3.20 check catches the consequence | P + CI + C | Non-zero exit naming the file and the model |
 
@@ -3425,6 +3435,26 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     instead. **The generalisable rule: when a document records a measurement's *result* but not the
     *artefact* that produced it, the claim cannot be re-earned later** — which is §0's marker problem
     wearing different clothes, and an argument for keeping the query next to the number.
+
+44. **A bytes-per-pair figure needs three qualifiers, and the inherited one carried none.** Stage 0.6
+    re-derives `er_max_pairs` from a measurement, and the measurement moved by **39×** — 17.1 to 665.5
+    B/pair — across choices nobody had stated. **Units:** memory costs ~6× disk, and the published figures
+    are memory figures (the measured compressible-narrow 104.5 reproduces §5's *"~100 B/pair"*), so
+    measuring the size of the database file over-provisions by six. **Entropy:** DuckDB's dictionary and
+    RLE compression works on `i % 97` and not on real names, costing ~1.5×; a capacity figure measured on
+    tidy synthetic data is optimistic about production, which is the wrong direction for an OOM guardrail.
+    **Row count:** per-pair cost falls from 280.3 at 25k rows to 140.8 at 800k as fixed overhead
+    amortises, so a constant validated on a small sample is calibrated on per-block overhead rather than
+    on data. The first draft of the test asserted at 50k rows and **failed**, which is how the third
+    qualifier was found.
+
+45. **The re-derived cap landed within 1% of the number it replaced, for different reasons.** 42,384,545
+    against an inherited 42,000,000 — but the old figure was 40 GB at 946 B/pair (wide) and the new one is
+    12 GiB at 152 B/pair (narrow). The constant was approximately right for the shipped configuration **by
+    coincidence**, and would have been wrong the moment either premise moved. It would have been easy to
+    present this as a correction; the honest description is that the *number* barely changed and the
+    *derivation* is the deliverable. A cap nobody can re-derive is the same defect as a `[VERIFIED]` marker
+    nobody can re-earn — it looks like a decision and is actually a leftover.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
