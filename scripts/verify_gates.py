@@ -386,14 +386,6 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
-        standard="3.85",
-        what="commit an F1 floor the shipped model cannot clear",
-        mutate="noop",
-        command=("python", "scripts/check_quality_floors.py"),
-        expect="is below the committed floor",
-        edits=(("dbt_project.yml", '      "0.9": 0.75', '      "0.9": 0.99'),),
-    ),
-    Injection(
         platform_bound=True,
         standard="3.84",
         what="write baselines in engine order instead of canonical order",

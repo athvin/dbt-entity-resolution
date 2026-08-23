@@ -110,13 +110,10 @@ jobs:
       # mechanism it names is the thing that runs (D.0 finding 71).
       - name: "baselines regenerate byte-identically (3.84)"
         run: uv run python scripts/check_baselines_reproducible.py
-      # 3.85 / 3.86. Their own steps rather than pre-commit hooks: 3.85 reads
-      # several parquet baselines to recompute quality, which is too slow for a
-      # commit hook and would be skipped into uselessness. These are the ONLY
-      # gates that ask whether the output is good -- every parity gate compares
-      # two engines and none compares either to the truth (§1.8, D.0 finding 74).
-      - name: "committed quality floors block rather than report (3.85)"
-        run: uv run python scripts/check_quality_floors.py
+      # 3.86's own step rather than a pre-commit hook: it imports
+      # measure_quality, whose module-level constants resolve baseline paths.
+      # The FLOORS themselves are enforced by harness/test_quality_floors.py,
+      # which `pytest harness` already runs -- one home, not two (D.0 finding 78).
       - name: "the floors measure the package once it has scores (3.86)"
         run: uv run python scripts/check_floor_subject.py
       # Delta 5: a toolchain vulnerability scan. `uv sync --locked` guarantees

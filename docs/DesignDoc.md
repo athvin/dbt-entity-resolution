@@ -342,9 +342,9 @@ target rather than a blank page: recall ≥ 0.9173 and F1 ≥ 0.9809 on `fake_10
 > ~0.10 too low, which invites exactly the wrong repair: raising them to an unmeetable number, watching CI
 > go red, and lowering them again with less confidence than before.
 >
-> Enforced from 2026-08-23 by **3.85**, which until then was the gap this correction was found in: the
-> floors were committed, the measurement existed, and *nothing connected them* (G14 — *"a Makefile target
-> reports; it does not stop a build"*).
+> Enforced by `harness/test_quality_floors.py`, which `pytest harness` runs in both `make ci` and CI. An
+> earlier draft of this correction claimed that gate did not exist and proposed a second one; it does
+> exist, it is stricter, and the duplicate was deleted (D.0 finding 74).
 
 #### (b) `er_threshold` has no defensible default, so the package requires it
 
@@ -1979,16 +1979,27 @@ quality tests**. A quality stage that runs after the stages it should gate canno
 > **Stage 5**. The five measurement models are therefore not beside the critical path — they are behind it,
 > and *"build immediately after Stage 2"* cannot be followed as written.
 >
-> Every way of building them sooner measures the frozen `predictions.parquet`, which is **Splink's** output.
-> A green `er_eval_accuracy` would then read as *"the product clears the floor"* while meaning *"the oracle
-> does"* — this repository's recurring inert-config defect (D.0 67, 70, 71, 73), with the aggravation that
-> it would sit in the DAG looking like a pipeline measurement.
+> **Four of the five** can only be built by measuring the frozen `predictions.parquet`, which is
+> **Splink's** output. A green `er_eval_accuracy` would then read as *"the product clears the floor"* while
+> meaning *"the oracle does"* — this repository's recurring inert-config defect (D.0 67, 70, 71, 73), with
+> the aggravation of sitting in the DAG looking like a pipeline measurement.
+>
+> **`er_diag_comparison_vector_distribution` is the exception, and an earlier draft of this correction
+> wrongly swept it in.** Splink's generator
+> (`splink/internals/comparison_vector_distribution.py:11-28`) reads **no** `bf_`, no `match_weight` and no
+> `match_probability` — only the gamma columns and `count(*)`. The package can already compute gammas:
+> `er_blocking_sql` and `er_gamma_case_sql` ship and are verified bit-identical. Built that way over
+> `er_stg_input`, with no baseline and no Splink in the run, it reproduces Splink's own distribution
+> **row for row** — 645 groups, 3,989 pairs accounted, **0 gamma disagreements** (D.0 finding 80).
+>
+> So the blocker is per-model and not categorical, and the correct statement is narrower: the *scored*
+> measurements wait for Stage 5; the *comparison-vector* diagnostic does not.
 >
 > **What the intent actually requires is that the floors gate, not that the models exist**, and that is
-> separable. As of 2026-08-23 the floors block via **3.85** measuring the oracle — honestly, because the
-> oracle is all there is — and **3.86** fires the moment any model declares a `match_probability` column,
-> which is the day the floors must be re-pointed at the package's own output. The models themselves land
-> with Stage 5.
+> separable, and already done: `harness/test_quality_floors.py` blocks on the floors, measuring the oracle
+> — honestly, because for the scored metrics the oracle is all there is. **3.86** then fires the moment any
+> model declares a `match_probability` column, which is the day those floors must be re-pointed at the
+> package's own output. The models themselves land with Stage 5.
 
 **AC:** confusion-matrix parity against `accuracy_analysis_from_labels_table` on a labelled fixture. This
 is the first stage that measures whether the *output is good*, not merely whether it matches Splink.
