@@ -62,6 +62,12 @@
     }
   ],
   "er_model_sha": "fc832931150d6d3de60326517dad54e40ed3b4a9a8d4b9e00d137c23dcfff978",
+  "er_tf_columns": [
+    "first_name",
+    "surname",
+    "city",
+    "email"
+  ],
   "levels_validated": 28,
   "resolved": {
     "comparisons": [

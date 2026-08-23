@@ -1,0 +1,40 @@
+---
+version: 2
+
+macros:
+  - name: er_term_frequency_long_sql
+    description: >
+      D7's LONG format -- one row per `(column_name, value)` -- for
+      `er_tf_all`. Section 3.5 and Splink's own generator emit term frequency
+      WIDE: one table per column, with the value column named after the column
+      and a `tf_<col>` beside it.
+
+
+      Wide makes the grain a function of the model JSON. Add a TF-adjusted
+      comparison and the table gains a column, so every contract, join key and
+      downstream test changes shape with the model. D7a keys `tf_all` on
+      `(er_model_sha, er_tf_snapshot_id, column_name, value, tf)` precisely so
+      the model decides the ROWS and never the columns.
+
+
+      This WRAPS `er_term_frequency_sql` rather than restating it, and that is
+      the reason the macro exists at all. Section 3.5's denominator rule --
+      `count(<col>)`, never `count(*)` -- is the silent one, and restating the
+      arithmetic here would give that rule a second home while 3.82 guarded
+      only the first.
+
+
+      `value` is cast to VARCHAR because the key is heterogeneous by
+      construction: one table holds the distributions of every TF-adjusted
+      column and those columns need not share a type. Splink compares term
+      frequencies by equality on the source value, which a lossless text
+      rendering preserves.
+
+    arguments:
+      - name: column_name
+        type: string
+        description: >
+          The column to compute frequencies for. Empty raises `ER-055`.
+      - name: relation
+        type: string
+        description: The corpus relation, normally `stg_input`.

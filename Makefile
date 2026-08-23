@@ -201,11 +201,34 @@ build:
 docs:
 	$(DBT) docs generate $(IT) --target ci
 
+# D.0 finding 73 -- why this target captures two exit codes instead of running
+# two commands in sequence.
+#
+# dbt-bouncer's own exit code was discarded by a trailing `;`, so
+# check_bouncer_ran.py became the target's exit code. And that script was
+# matching the outcome `fail` while dbt-bouncer emits `failed`. Two layers, each
+# assuming the other caught it: a run reporting SUCCESS=71 ERROR=3 exited 0.
+#
+# The checker still runs even when dbt-bouncer failed, because it is what
+# detects a VACUOUS pass -- a config matching nothing also exits 0. Both codes
+# are then honoured.
+#
+# The explanation lives HERE, at column 0, and not inside the recipe: a `#`
+# comment carrying a trailing backslash continues into the next line and
+# silently comments out the command that follows it. Found by doing it.
 bouncer:
 	@if [ -f dbt-bouncer.yml ]; then \
+		set +e; \
 		uv run dbt-bouncer run --config-file dbt-bouncer.yml \
 			--output-file target/bouncer.json --output-format json; \
+		bouncer_rc=$$?; \
+		set -e; \
 		uv run python scripts/check_bouncer_ran.py target/bouncer.json; \
+		checker_rc=$$?; \
+		if [ $$bouncer_rc -ne 0 ] || [ $$checker_rc -ne 0 ]; then \
+			echo "bouncer FAILED (dbt-bouncer=$$bouncer_rc checker=$$checker_rc)"; \
+			exit 1; \
+		fi; \
 	else \
 		echo "dbt-bouncer.yml does not exist yet (D.1 step 4, and C.5 -- its"; \
 		echo "text was lost with the deleted scaffold and must be"; \

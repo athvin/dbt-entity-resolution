@@ -33,9 +33,13 @@ MIN_SUCCESSES = 20
 # so the check being *configured* proves nothing about it having *loaded*.
 REQUIRED_CHECKS = ("check_one_yml_per_sql",)
 
-# Anything that is not a success. `warning` is the dangerous one: it is how a
-# raising check reports, and it does not fail the run.
-BAD_OUTCOMES = ("warning", "error", "fail")
+# INVERTED deliberately: everything that is not a success is bad, rather than a
+# list of the bad names. The list version shipped as ("warning", "error",
+# "fail") -- and dbt-bouncer emits **"failed"**. So a run reporting
+# `{'success': 71, 'failed': 3}` matched none of them and was reported clean
+# (D.0 finding 73). An allow-list of one known-good value cannot be defeated by
+# a name this file did not anticipate; a deny-list of guessed names always can.
+GOOD_OUTCOME = "success"
 
 
 def check(results_path: Path) -> list[str]:
@@ -55,10 +59,11 @@ def check(results_path: Path) -> list[str]:
             f"{MIN_SUCCESSES}. A config that matches nothing exits 0."
         )
     errors.extend(
-        f"{outcomes[bad]} check(s) had outcome {bad!r}. A check that raises is "
-        f"downgraded to a warning and the run stays green."
-        for bad in BAD_OUTCOMES
-        if outcomes[bad]
+        f"{count} check(s) had outcome {outcome!r}. A raising check is downgraded "
+        f"to a warning and a failing one does not reach this script's exit code "
+        f"unless it is counted here (section 6.2, D.0 finding 73)."
+        for outcome, count in sorted(outcomes.items())
+        if outcome != GOOD_OUTCOME and count
     )
     errors.extend(
         f"`{required}` did not register. A custom check that fails to import is a "

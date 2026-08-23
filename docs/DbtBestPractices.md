@@ -3721,6 +3721,28 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     the verifier itself. The re-sorted baselines were verified
     content-identical to the committed ones: 3,989 pairs joined, `max|Δmw| = 0`, zero edge flips.
 
+73. **`make bouncer` exited 0 while dbt-bouncer reported `ERROR=3`, and it had always been able to.**
+    Two independent holes, each alone sufficient, and neither visible until a check finally failed:
+    * the recipe ran `dbt-bouncer run …;` — a trailing **semicolon**, so the tool's own exit code was
+      discarded and `check_bouncer_ran.py` became the target's exit code;
+    * and that script's `BAD_OUTCOMES` listed `("warning", "error", "fail")` while dbt-bouncer emits
+      **`"failed"`**. A run reporting `{'success': 71, 'failed': 3}` matched none of them.
+
+    So 3.40 — the standard written *because* `SUCCESS=0 WARN=2 ERROR=0` exits 0 (finding 20) — was itself
+    defeated by a near-miss string. The deny-list is now **inverted**: anything that is not `success` is
+    counted, which no unanticipated outcome name can slip past. The recipe captures both exit codes and
+    honours either, and the checker still runs when dbt-bouncer fails, because it is what detects a
+    *vacuous* pass. Verified by injecting a `failed` outcome: exit 1, and 0 when restored.
+    **Twice on the way, `$?` measured a pipe rather than the command** (`| head -5`, `| tail -3`) — the
+    same defect being fixed, one layer out. And the first repair put the explanation in `#` comments
+    *inside* the recipe, where a trailing backslash continues the comment and silently commented out the
+    commands beneath it; it now lives at column 0.
+
+    Two real gaps surfaced the moment the gate started working: `er_tf_all` sat in `models/staging/` while
+    the config already reserved `^er_(int_|tf_|…)` for `models/intermediate/`, and the model carried a
+    `primary_key` **constraint** but no uniqueness **test** — different claims, since dbt-duckdb does not
+    enforce the constraint on a table, so the grain was documented and unheld.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`

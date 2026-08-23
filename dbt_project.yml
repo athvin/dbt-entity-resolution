@@ -78,6 +78,26 @@ vars:
   # no macros. Consumed as `columns: "{{ var('er_gamma_columns') }}"`.
   er_gamma_columns: []
   er_bf_columns: []
+  # D7a: which columns carry a term-frequency distribution. Derived by the
+  # sidecar from the SAME predicate that decides `bf_tf_adj_` -- two
+  # independently maintained lists is M2's drift.
+  er_tf_columns: []
+
+  # D7a -- term frequency is FROZEN BY SNAPSHOT. `frozen` is the default and the
+  # mode every parity and production run uses; `refresh` recomputes from the live
+  # corpus and exists ONLY to mint a snapshot. Recomputing on every run would
+  # make each pair's score a function of unrelated records: D7a measures a
+  # comparison moving from -6.51 to -8.81 bits because nine unrelated rows
+  # arrived, on a pair whose own two records did not change.
+  er_tf_mode: "frozen"
+
+  # No defaults, deliberately. The snapshot relation is the consumer's (M4b),
+  # and both key prefixes are part of a scored row's identity (M8) -- a default
+  # here would let a run silently score against the wrong generation.
+  er_tf_snapshot_relation: ""
+  er_tf_snapshot_id: ""
+  er_model_sha: ""
+
   er_scored_pairs_columns: []
   er_enforce_contracts: true
 
