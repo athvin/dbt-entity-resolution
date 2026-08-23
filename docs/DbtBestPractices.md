@@ -2665,7 +2665,7 @@ would require carving a second entry into a policy D11 deliberately closed.
 > M17 rec (b), the `threads` pairing, is adopted as written and C.3 already implements it.
 > **Reversible:** reopen B.1 and DR-13.
 
-**B.2 — Thresholds as a var or a dimension (DesignDoc M16).** `var('er_threshold')` builds one partition per
+**B.2 — Thresholds as a var or a dimension (DesignDoc M16).** ~~Open.~~ **Resolved 2026-08-23: the dimension**, together with DesignDoc DR-08 and DR-09. See `DesignDoc.md` §1.7 — `thresholds` becomes a relation of `(thr_auto_merge, thr_review_low)` pairs cast **DOUBLE**, `er_thresholds` defaults to one row, and the half-open gray band is emitted to `review_pairs` rather than clustered. `var('er_threshold')` builds one partition per
 run; a `thresholds` relation cross-joined with a composite `USING KEY (thr, unique_id)` produces all of them
 in one statement. The Stage-6 acceptance criteria require three thresholds simultaneously, and cross-threshold
 monotonicity is not expressible as a dbt test under the var approach. This changes the *contract* of
