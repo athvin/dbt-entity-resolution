@@ -293,6 +293,8 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 
 | | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.75 | The model JSON passes the §1.5 trust boundary before anything builds | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact | P + CI | Non-zero exit naming the level and the function |
+| 3.86 | Once the package declares a scored column, the quality floors measure the PACKAGE and not the oracle (§1.8, M12) | `scripts/check_floor_subject.py` -- keyed on a `match_probability` column DECLARATION, not on a guessed model path, so it survives renaming, moving and splitting | pre-commit + CI | `ER-086` naming the declaring model |
+| 3.85 | The committed quality floors BLOCK rather than report (§1.8/DR-22, G14) | `scripts/check_quality_floors.py` -- two-sided blocking-recall band (M12 rec 2), per-threshold F1 floor, hard max-cluster-size test | pre-commit + CI | Check fails naming the floor, the measured value and the gap |
 | 3.84 | Every committed baseline regenerates byte-identically from the frozen model (§20.1, A.4's "canonical ordering", D.0 finding 71) | `scripts/check_baselines_reproducible.py` -- regenerates into a temp dir and compares `sha256`; `gen_baseline.py` canonicalises column and row order | CI | Check fails naming the artefact and both hashes |
 | 3.83 | The CI workflow and the Makefile agree on which project and which paths their shared commands look at (§17, D.0 finding 69) | `scripts/check_ci_makefile_parity.py` -- compares `--project-dir` and target paths for every drift-prone command present in both | pre-commit + CI | Check fails naming the command and both sides' targets |
 | 3.82 | Term frequencies sum to exactly 1.0 per column (§3.5's non-null denominator) | `tests_python/test_term_frequency_sql.py`, executed against the real fixture | CI | Test fails naming the column and the shortfall |
@@ -3742,6 +3744,48 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     the config already reserved `^er_(int_|tf_|…)` for `models/intermediate/`, and the model carried a
     `primary_key` **constraint** but no uniqueness **test** — different claims, since dbt-duckdb does not
     enforce the constraint on a table, so the grain was documented and unheld.
+
+74. **The quality floors were committed, the measurement was written, and nothing connected them.**
+    `dbt_project.yml` carries `er_blocking_recall_floor`, `er_f1_floor` and `er_max_cluster_size` under a
+    `CODEOWNERS` entry; `scripts/measure_quality.py` computes exactly those numbers. Its `main()` returned
+    **0 unconditionally** and the script appeared in no Makefile target, no pre-commit hook, no CI step and
+    no injection. G14 names the shape in advance — *"a Makefile target reports; it does not stop a build"* —
+    and §1.8 names the consequence: *"otherwise this stage reports and the product ships at 0.72."* These
+    are the only gates in the repository that ask whether the output is **good**; every §6.4 parity gate
+    compares two engines and none compares either engine to the truth. Closed by **3.85**.
+
+75. **Two of §1.8's own numbers disagree with the fixture, and its text contains the reason.** §1.8 cites
+    *"1,651 of 2,975 true pairs found"*, while vendored `fake_1000` has **2,031** true pairs over 1,000
+    records — a different denominator, so no figure derived from it is comparable. The discriminating
+    measurement is that **M12's `0.5057` reproduces exactly** (`block_on(first_name) + block_on(surname)`,
+    matching §5's *"blocking recall = 0.51"*), while the same method on the four-rule model M12 says
+    reaches 0.9173 gives **0.8124**, and adding `block_on(city)` reaches only 0.8789. Same method, same
+    fixture, same denominator: the method is sound and the target is stale. This mattered because the
+    committed floors — correctly derived per DR-22 from *the model that ships* — read ~0.10 low against
+    §1.8's prose, inviting precisely the wrong repair.
+
+76. **The tripwire built to catch a silent failure could not fire, for the same reason it was catching.**
+    `check_floor_subject.py` (3.86) asks whether the quality floors still measure the oracle after the
+    package starts producing scores. Its first version grepped `measure_quality.py` for the literal string
+    `"fixtures/baselines"` — which that file spells `ROOT / "fixtures" / "baselines"`, as separate path
+    components. The substring never matched, so the check exited 0 under every possible input. It reported
+    `1 scored-model declaration(s)` and passed anyway. Only the deliberately-failing case caught it; the
+    happy path was green throughout. The fix resolves the module's own constant rather than pattern-matching
+    its source, because a resolved constant cannot drift from what the module does — it **is** what the
+    module does.
+
+77. **Splink's accuracy oracle defaults to a quantised sweep, and freezing that default would have
+    manufactured a parity failure.** `accuracy_analysis_from_labels_column` takes
+    `match_weight_round_to_nearest=0.1` by default, so its rows are confusion matrices at rounded **match
+    weights**, not at requested probabilities. Measured at t = 0.5: the default gives `tp=1433 fp=3
+    f1=0.826651`, while `match_weight_round_to_nearest=None` gives `tp=1431 fp=0 f1=0.826690` — which
+    reproduces this project's own measurement **exactly**, at all three thresholds (1431/1276/985,
+    0.826690/0.771696/0.653183). The `fp=3` is an artefact of the boundary sitting below the requested
+    threshold. Frozen at the default, Stage 10's acceptance criterion would have tripped over ~2 pairs and
+    ~0.0014 F1, and the natural response to a small unexplained divergence is to widen a tolerance — §21's
+    failure mode, reached by way of the oracle's plotting default. Two further details the baseline now
+    carries rather than discovering late: `truth_threshold` is a match weight, and `tn` counts the **full**
+    comparison space (495,130), not the generated pairs.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both

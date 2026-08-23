@@ -67,6 +67,11 @@ THRESHOLDS = (0.5, 0.9, 0.99)
 # it is redrawn every run, from the baseline itself. See `_concat_frame`.
 SALT_COLUMN = "__splink_salt"
 
+# M12's ground truth, carried by `fake_1000` and by every fixture that wants to
+# be measurable rather than merely comparable. §1.8: parity gates compare two
+# engines; none of them compares either engine to the truth.
+GROUND_TRUTH_COLUMN = "cluster"
+
 
 def _git(*args: str) -> str:
     try:
@@ -323,6 +328,63 @@ def _tf_long_frame(linker: Any, concat: pd.DataFrame) -> pd.DataFrame:
     return combined.sort_values(["column_name", "value"]).reset_index(drop=True)
 
 
+def _accuracy_frame(linker: Any) -> pd.DataFrame:
+    """Splink's own `accuracy_analysis_from_labels_column`, swept and whole.
+
+    This is Stage 10's acceptance criterion in artefact form: *"confusion-matrix
+    parity against `accuracy_analysis_from_labels_table` on a labelled fixture"*.
+    The `_column` variant is used because `fake_1000` carries ground truth as a
+    `cluster` COLUMN (M12), which is the labelling this project actually has.
+
+    `positives_not_captured_by_blocking_rules_scored_as_zero` is left at its
+    default `True`, and that default is the reason the table is usable as a
+    blocking-recall oracle at all: pairs no blocking rule generated are scored
+    zero rather than dropped, so `recall` at the lowest threshold IS blocking
+    recall. `[RUN]`: 0.812408 here against 0.8124 from `measure_quality.py`,
+    with `tp + fn = 1650 + 381 = 2031` -- the fixture's true pair count, reached
+    independently.
+
+    Every optional metric is requested. They cost nothing to compute alongside
+    the ones we need, and a metric absent from a frozen baseline is a metric no
+    later stage can gate on without re-minting every artefact.
+
+    **`match_weight_round_to_nearest=None` is the load-bearing argument.** Its
+    default is `0.1`, which QUANTISES the sweep -- and a baseline frozen at the
+    default is a charting artefact, not an oracle. Measured, at the three
+    thresholds this project builds simultaneously:
+
+        round=0.1     t>=0.5  tp=1433  fp=3  f1=0.826651
+        round=None    t>=0.5  tp=1431  fp=0  f1=0.826690   <- matches ours exactly
+
+    At `0.1` the first row at or above probability `t` is the matrix at the
+    nearest rounded MATCH WEIGHT, which can sit below `t` and admit pairs the
+    threshold excludes -- hence `fp=3` where the exact computation has none. Our
+    own `measure_quality.py` reports tp = 1431 / 1276 / 985 and f1 = 0.826690 /
+    0.771696 / 0.653183, and unrounded Splink reproduces every one of those
+    exactly.
+
+    Freezing the default would therefore have manufactured a parity failure of
+    ~2 pairs and ~0.0014 F1 for Stage 10's acceptance criterion to trip over --
+    and the natural response to a small unexplained divergence is to widen a
+    tolerance, which is §21's failure mode reached by way of the oracle's
+    plotting default.
+    """
+    frame = linker.evaluation.accuracy_analysis_from_labels_column(
+        GROUND_TRUTH_COLUMN,
+        output_type="table",
+        match_weight_round_to_nearest=None,
+        add_metrics=["specificity", "npv", "accuracy", "f1", "f2", "f0_5", "p4", "phi"],
+    ).as_pandas_dataframe()
+    if frame.empty:
+        msg = (
+            "Splink's accuracy analysis returned no rows, so Stage 10 has no "
+            "oracle. An empty confusion-matrix baseline would make every parity "
+            "assertion over it vacuously true (section 6.1)."
+        )
+        raise RuntimeError(msg)
+    return frame
+
+
 def generate(
     fixture: Path, out_dir: Path, model_json: Path, *, refreeze: bool = False
 ) -> list[Path]:
@@ -400,6 +462,21 @@ def generate(
     concat_path = out_dir / "concat.parquet"
     _write_parquet(concat, concat_path)
     written.append(concat_path)
+
+    # 2b. Stage 10's oracle. Frozen NOW, before any measurement model exists,
+    #     because Stage 0.3's whole lesson is that a baseline format retrofitted
+    #     after the fact is the expensive path -- and this one carries two
+    #     details that would each have been discovered late:
+    #
+    #     * `truth_threshold` is a MATCH WEIGHT (log-odds), not a probability,
+    #       and the table is a SWEEP over rounded weights -- 404 rows here, not
+    #       one row per configured threshold.
+    #     * `tn` counts the FULL comparison space (495,130), not the generated
+    #       pairs. A confusion matrix built over blocked pairs only would agree
+    #       on tp/fp/fn and be wrong on every rate that uses tn.
+    accuracy_path = out_dir / "accuracy_analysis.parquet"
+    _write_parquet(_accuracy_frame(linker), accuracy_path)
+    written.append(accuracy_path)
 
     tf_path = out_dir / "tf_all.parquet"
     _write_parquet(_tf_long_frame(linker, concat), tf_path)
