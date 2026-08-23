@@ -103,6 +103,13 @@ jobs:
       # column stays true.
       - name: "divergence log <-> pinning tests, PARITY.md stage coverage (3.49, 3.50)"
         run: uv run python scripts/check_divergence_log.py
+      # 3.84 regenerates every baseline and compares sha256. Its own step rather
+      # than a pre-commit hook: it spawns a subprocess that runs Splink, which
+      # is too slow for a commit hook and would be skipped into uselessness.
+      # Named here so the matrix's Gate column stays literally true -- the
+      # mechanism it names is the thing that runs (D.0 finding 71).
+      - name: "baselines regenerate byte-identically (3.84)"
+        run: uv run python scripts/check_baselines_reproducible.py
       # Delta 5: a toolchain vulnerability scan. `uv sync --locked` guarantees
       # reproducibility, not that what is reproduced is safe.
       - name: toolchain vulnerability scan

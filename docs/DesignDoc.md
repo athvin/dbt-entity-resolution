@@ -2791,9 +2791,25 @@ For the record, v1's crossover — the `|mw|` below which its `1e-8` probability
 | **edge-set membership** *(new, and the binding gate)* | **exact boolean agreement**: for every threshold `t`, `(p_dbt >= t) == (p_splink >= t)` for every pair. Both sides use `match_probability >= t` on the materialised column (B2). |
 | clusters | **label equality** on the component label, primary; partition equality (canonical relabel + pairwise co-membership) as fallback diagnostic. D4 proves labels are identical, so the weaker gate hides real drift (M6). |
 | golden records | exact |
+| **trained model parameters** *(new — the artefact class this table never covered)* | **relative `1e-12`**, never byte equality. `[RUN]` 2026-08-23, four processes, same seed, same code, same machine: `m_probability` differs by up to **1.4e-15 relative (~6 ULP)**. Splink's EM is not byte-reproducible across processes, so byte equality is unachievable and demanding it would leave `--refreeze` permanently red. `1e-12` sits ~700× above the measured noise and far below any real parameter change. This is the tolerance that answers *"is a re-minted model the same model?"* — a question the table previously had no row for, which is why `gen_baseline.py` silently re-froze the model on every run (D.0 finding 71). |
 | any float **aggregate** | **not a gate.** Non-deterministic above one thread (M15); advisory only. |
 
 Add the standing note: *exact bit equality is the right default because both engines run float8 on the same DuckDB; where the expression tree is identical the result is identical.* **Verified across platforms 2026-08-23 (G5, closed): all five probe values are bit-identical on darwin/arm64 and linux/amd64 under DuckDB 1.5.5, `log2` included, and `harness/test_float_parity.py` asserts it on both platforms every run.** Tolerance is for where it provably cannot be — which, after §3.1's linear-space rule, is almost nowhere.
+
+> **[CORRECTION 2026-08-23] The sentence above is true of the probes and is narrower than it reads.** Five
+> isolated expressions being bit-identical does **not** carry to the pipeline that composes them, and
+> measuring the whole artefact showed it does not. Re-minting the full baseline set on linux/amd64 in
+> Docker — identical `splink`, `duckdb`, `sqlglot`, `pandas`, model sha and fixture sha, `mint_threads=1` —
+> against the darwin/arm64 set: **bytes differ on all six artefacts**; the data is identical on five and
+> `predictions` differs on **one pair of 3,989**; `max|Δmw| = 1.78e-15`, `max|Δp| = 0`, and **zero edge
+> flips** at 0.5 and 0.9.
+>
+> So the conclusion stands where it matters and the wording must not be over-read. Cross-platform
+> divergence is real, it is ~2e-15, it sits far inside A.4's `1e-9 + 1e-12·|mw|`, and A.4's **binding**
+> gate — edge-set membership — is exact. What does **not** hold is byte identity of the committed
+> artefacts, which is why baselines are minted and gated on **linux/amd64** (§22.1, 3.59) and why 3.84 is
+> advisory elsewhere and says so. This is §0's distinction exactly: the probe was *observed to pass*, and
+> that was read as a guarantee about a claim nobody had tested.
 
 ---
 

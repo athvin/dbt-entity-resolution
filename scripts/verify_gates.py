@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -73,6 +74,13 @@ class Injection:
     expect: str
     cwd: str = "."
     edits: tuple[tuple[str, str, str], ...] = field(default=())
+    # True when the gate is only BINDING on §22.1's normative float platform.
+    # Off it, the gate reports advisory and returns 0 by design, so an injection
+    # cannot be demonstrated -- and forcing it would prove nothing, because the
+    # committed baselines already differ there for platform reasons. Reported as
+    # SKIPPED rather than passed: §0's distinction between "observed to pass" and
+    # "observed to fail when violated" is the whole point of this script.
+    platform_bound: bool = False
 
 
 # The compile gate runs from `on-run-start`, and `dbt parse` does NOT execute
@@ -80,6 +88,18 @@ class Injection:
 # `dbt run-operation er_assert_project_standards` step for exactly this reason,
 # and that is what these injections invoke.
 GATE = ("dbt", "run-operation", "er_assert_project_standards", "--project-dir", "integration_tests")
+
+# §22.1 / 3.59's normative float platform. Gates anchored to it can only be
+# SHOWN TO FIRE there; claiming otherwise would be the "observed to pass"
+# confusion §0 warns about.
+NORMATIVE_PLATFORM = "linux/amd64"
+
+
+def _on_normative_platform() -> bool:
+    return platform.system().lower() == "linux" and platform.machine().lower() in {
+        "x86_64",
+        "amd64",
+    }
 
 
 INJECTIONS: tuple[Injection, ...] = (
@@ -342,6 +362,21 @@ INJECTIONS: tuple[Injection, ...] = (
                 "scripts/pending_subjects.yml",
                 "  - path: docs/PARITY.md\n    check: check_divergence_log.py",
                 "  - path: docs/PARITY.md.disabled\n    check: check_divergence_log.py",
+            ),
+        ),
+    ),
+    Injection(
+        platform_bound=True,
+        standard="3.84",
+        what="write baselines in engine order instead of canonical order",
+        mutate="noop",
+        command=("python", "scripts/check_baselines_reproducible.py"),
+        expect="does not regenerate byte-identically",
+        edits=(
+            (
+                "scripts/gen_baseline.py",
+                "    columns = sorted(frame.columns)",
+                "    columns = list(frame.columns)",
             ),
         ),
     ),
@@ -651,6 +686,14 @@ def verify(only: str | None = None) -> tuple[int, int, list[str]]:
 
     for inj in INJECTIONS:
         if only and inj.standard != only:
+            continue
+        if inj.platform_bound and not _on_normative_platform():
+            messages.append(
+                f"SKIP {inj.standard} ({inj.what}): binding only on "
+                f"{NORMATIVE_PLATFORM}; this is "
+                f"{platform.system().lower()}/{platform.machine().lower()}. "
+                f"NOT shown to fire here -- CI is the authority (§22.1, 3.59)."
+            )
             continue
         with tempfile.TemporaryDirectory(prefix="er-verify-") as tmp:
             scratch = Path(tmp) / "repo"
