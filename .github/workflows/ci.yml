@@ -1,0 +1,270 @@
+---
+# C.7 with its nine v2 deltas applied. Section 15 is the topology; this is the
+# subset whose machinery exists. The other jobs -- parity, determinism,
+# comparator-sensitivity, project-evaluator, consumer-smoke -- arrive WITH the
+# machinery they gate, and are added to ci-gate's `needs:` then. A job asserting
+# nothing is worse than a job that does not exist, because it looks like cover.
+name: ci
+
+on:
+  pull_request: {}
+  merge_group: {}
+  push:
+    branches: [main]
+
+# Delta 3: per-job permissions rather than relying on the workflow default. The
+# nightly job will need more the moment section 14.6's trend persistence is
+# resolved, and that should be granted per job rather than raised globally.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DBT_PROFILES_DIR: ${{ github.workspace }}/profiles
+  DBT_ER_DUCKDB_THREADS: "8"
+  DBT_ER_MEMORY_LIMIT: "8GB"
+  DBT_ER_TEMP_DIR: ${{ github.workspace }}/target/.duckdb_tmp
+  DBT_ER_OBS_DB: ${{ github.workspace }}/target/obs.duckdb
+  # Delta 4 / 3.58 / section 22.2: determinism is PINNED, not assumed. The
+  # determinism job ASSERTS these rather than trusting they were set.
+  PYTHONHASHSEED: "0"
+  TZ: UTC
+  LC_ALL: C
+  # The package has no default threshold (DesignDoc 1.8, DR-22): the one that
+  # existed measurably cost ~330 true pairs for zero precision benefit. This is
+  # a LINT value for package-root invocations; integration_tests supplies its
+  # own, and neither is a production value.
+  DBT_ER_THRESHOLDS: '[{"auto_merge":0.9}]'
+
+jobs:
+  lint:
+    name: lint (blocking)
+    runs-on: ubuntu-24.04        # NOT ubuntu-latest: a floating label silently
+    timeout-minutes: 15          # invalidates performance trending.
+    permissions:
+      contents: read
+    steps:
+      # Delta 1: pinned by 40-char commit SHA with a version comment. Delta 2:
+      # persist-credentials false -- the default leaves a usable token in
+      # .git/config for every subsequent step, including third-party actions.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv python install 3.12
+      - run: uv lock --check                       # fails if uv.lock is stale
+      - run: uv sync --locked --all-groups
+      - run: mkdir -p "$DBT_ER_TEMP_DIR" "$(dirname "$DBT_ER_OBS_DB")"
+      - run: uv run dbt deps
+      - run: uv run dbt deps --project-dir integration_tests
+      - name: package-lock.yml is current
+        run: |
+          uv run dbt deps --lock --project-dir integration_tests
+          git diff --exit-code -- integration_tests/package-lock.yml
+      - run: uv run dbt parse
+      - run: uv run dbt parse --project-dir integration_tests
+      # `dbt parse` does NOT execute on-run-start hooks, so it does not fire the
+      # compile gate -- despite section 2 calling that gate "compile". This step
+      # is why C.7 has it, and Appendix D.0 finding 16 is why it is called out.
+      - name: compile gate
+        run: >-
+          uv run dbt run-operation er_assert_project_standards
+          --project-dir integration_tests
+      - run: uv run sqlfluff lint models
+             --format github-annotation-native --annotation-level failure
+      - run: uv run pre-commit run --all-files --show-diff-on-failure
+      # Delta 5: a toolchain vulnerability scan. `uv sync --locked` guarantees
+      # reproducibility, not that what is reproduced is safe.
+      - name: toolchain vulnerability scan
+        run: uv run --with pip-audit pip-audit --strict || true
+        continue-on-error: true   # advisory until section 16 states a policy
+
+  python-tests:
+    name: python-tests (blocking)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv python install 3.12
+      - run: uv sync --locked --all-groups
+      # 3.57: every enforcement script ships a FAILING-case test. Section 0:
+      # "observed to pass" is never "observed to fail when violated".
+      - run: uv run pytest tests_python -q
+
+  build:
+    name: build + tests (blocking)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv python install 3.12
+      - run: uv sync --locked --all-groups
+      - run: mkdir -p "$DBT_ER_TEMP_DIR" "$(dirname "$DBT_ER_OBS_DB")"
+      - run: uv run dbt deps --project-dir integration_tests
+
+      # Delta 9: the heredoc constraint, stated beside the step.
+      #
+      # This is safe TODAY because the model JSON is a repository-controlled
+      # fixture. It becomes an environment-injection vector the moment the JSON
+      # comes from a fork or a workflow input -- which is exactly what a "test my
+      # model" workflow would do. Section 15's stated position on
+      # pull_request_target is NEVER, and this is the reason.
+      #
+      # Enabled when Stage 0.4 freezes fixtures/model_jsons/fake_1000_v1.json.
+      # - name: Load the Splink model JSON into the environment
+      #   run: |
+      #     {
+      #       echo "DBT_ER_MODEL_JSON<<__EOF__"
+      #       cat fixtures/model_jsons/fake_1000_v1.json
+      #       echo "__EOF__"
+      #     } >> "$GITHUB_ENV"
+
+      # Section 15: `dbt seed` must precede `dbt build`. The package reads a
+      # relation named by a var (DesignDoc 2.0, DR-16), and a name creates no
+      # DAG edge -- so nothing orders the fixture's creation. No seeds exist
+      # until Stage 0.2; the step says so rather than being silently absent.
+      - name: seed (no seeds until Stage 0.2)
+        working-directory: integration_tests
+        run: |
+          if compgen -G "seeds/*.csv" > /dev/null; then
+            uv run dbt seed --target ci
+          else
+            echo "::notice::no seeds yet (DesignDoc Stage 0.2) -- skipping"
+          fi
+
+      # The contract smoke test: an --empty failure means the contracted column
+      # set changed. It is also section 12.2's cheap precondition for unit tests,
+      # which read parent column types back.
+      - run: uv run dbt build --target ci --empty --fail-fast
+        working-directory: integration_tests
+      - run: uv run dbt build --target ci --full-refresh --fail-fast
+        working-directory: integration_tests
+      - run: uv run dbt docs generate --target ci
+        working-directory: integration_tests
+
+      # 3.41: no CI job may select zero nodes. A `--select` that matches nothing
+      # reports success, which is the vacuous pass section 12.7 is about. There
+      # is no --select above yet; this asserts the build was not empty, which is
+      # the same failure one level up.
+      - name: assert the build was not empty
+        working-directory: integration_tests
+        run: |
+          rr=target/run_results.json
+          n=$(uv run python -c \
+            "import json,sys;d=json.load(open('$rr'));sys.stdout.write(str(len(d['results'])))")
+          echo "run_results rows: $n"
+          test "$n" -gt 0 || { echo "::error::the build produced zero results"; exit 1; }
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: dbt-artifacts
+          path: |
+            integration_tests/target/manifest.json
+            integration_tests/target/catalog.json
+            integration_tests/target/run_results.json
+          retention-days: 14
+
+      # Delta 8 is NOT applied: it restores the prior observability artefact per
+      # "Appendix B.6's resolution", and B.6 is OPEN. Applying B.6(a) before B.7
+      # is decided also widens the section 14.10 egress (RC52). Blocked.
+
+  bouncer:
+    name: bouncer (blocking)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: build
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv python install 3.12
+      - run: uv sync --locked --all-groups
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: dbt-artifacts
+          path: integration_tests/target/
+      # --output-format json, NOT the rendered table. The rich table wraps and
+      # TRUNCATES check names to fit the terminal width, so a grep against it
+      # passes or fails depending on how wide the runner thinks it is. Found by
+      # this job failing on its first CI run while reporting SUCCESS=25.
+      - name: run dbt-bouncer
+        run: >-
+          uv run dbt-bouncer run --config-file dbt-bouncer.yml
+          --output-file bouncer.json --output-format json
+
+      # 3.40, EXTENDED by Appendix D.0 finding 20 -- see the script for the
+      # measurement. Section 17: the same code runs from `make bouncer`, so a
+      # local pass is a CI pass rather than a similar-looking one.
+      - name: assert bouncer actually ran its checks
+        run: uv run python scripts/check_bouncer_ran.py bouncer.json
+
+  verify-gates:
+    name: verify-gates (blocking)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv python install 3.12
+      - run: uv sync --locked --all-groups
+      - run: mkdir -p "$DBT_ER_TEMP_DIR"
+      - run: uv run dbt deps --project-dir integration_tests
+      # 3.38: each standard injected and observed to FAIL, with the expected
+      # error string. Section 0: a standard that has never been observed to fail
+      # is not known to be enforced.
+      - run: uv run python scripts/verify_gates.py
+
+  ci-gate:
+    name: ci-gate
+    if: always()
+    runs-on: ubuntu-24.04
+    needs: [lint, python-tests, build, bouncer, verify-gates]
+    permissions:
+      contents: read
+    steps:
+      # THE SINGLE REQUIRED STATUS CHECK. Adding a job never requires editing a
+      # branch-protection ruleset -- a new job that is not required is a job
+      # whose failure nobody blocks on.
+      - name: aggregate
+        run: |
+          echo '${{ toJSON(needs) }}'
+          if echo '${{ toJSON(needs) }}' | grep -qE '"result": *"(failure|cancelled)"'; then
+            echo "::error::at least one upstream job failed or was cancelled"
+            exit 1
+          fi

@@ -14,6 +14,7 @@ is the harder defect to notice later -- which is the same argument 3.38 makes fo
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -23,9 +24,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import check_bouncer_ran  # noqa: E402
 import check_flags_parity  # noqa: E402
 import check_no_nondeterminism  # noqa: E402
 import check_root_packages_minimal  # noqa: E402
+import check_workflow_hardening  # noqa: E402
 import check_yml_pairing  # noqa: E402
 
 
@@ -213,3 +216,121 @@ def test_root_packages_accepts_the_shipped_surface(
     shutil.copyfile(ROOT / "packages.yml", pkgs)
     monkeypatch.setattr(check_root_packages_minimal, "PACKAGES", pkgs)
     assert check_root_packages_minimal.check() == []
+
+
+# --------------------------------------------------------------------------
+# 3.56 -- workflow hardening
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def workflows(tmp_path: Path) -> Path:
+    """Build a workflow directory that satisfies every hardening rule."""
+    wf = tmp_path / "workflows"
+    wf.mkdir()
+    (wf / "ci.yml").write_text(
+        "---\n"
+        "on:\n  pull_request: {}\n"
+        "permissions:\n  contents: read\n"
+        "jobs:\n"
+        "  lint:\n"
+        "    permissions:\n      contents: read\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@" + ("a" * 40) + "\n"
+        "        with:\n          persist-credentials: false\n"
+    )
+    return wf
+
+
+def test_workflow_hardening_passes_on_a_clean_workflow(workflows: Path) -> None:
+    assert check_workflow_hardening.check(workflows) == []
+
+
+def test_workflow_hardening_rejects_a_mutable_tag(workflows: Path) -> None:
+    p = workflows / "ci.yml"
+    p.write_text(p.read_text().replace("a" * 40, "v5"))
+    errors = check_workflow_hardening.check(workflows)
+    assert any("40-character commit SHA" in e for e in errors)
+
+
+def test_workflow_hardening_rejects_persisted_credentials(workflows: Path) -> None:
+    p = workflows / "ci.yml"
+    p.write_text(p.read_text().replace("persist-credentials: false", "fetch-depth: 0"))
+    errors = check_workflow_hardening.check(workflows)
+    assert any("persist-credentials" in e for e in errors)
+
+
+def test_workflow_hardening_rejects_a_job_without_permissions(workflows: Path) -> None:
+    p = workflows / "ci.yml"
+    p.write_text(p.read_text().replace("    permissions:\n      contents: read\n", "", 1))
+    errors = check_workflow_hardening.check(workflows)
+    assert any("declares no `permissions:`" in e for e in errors)
+
+
+def test_workflow_hardening_rejects_pull_request_target(workflows: Path) -> None:
+    """Section 15's stated position is never. C.7's GITHUB_ENV heredoc is why."""
+    p = workflows / "ci.yml"
+    p.write_text(p.read_text().replace("  pull_request: {}", "  pull_request_target: {}"))
+    errors = check_workflow_hardening.check(workflows)
+    assert any("pull_request_target" in e for e in errors)
+
+
+def test_workflow_hardening_fails_when_there_are_no_workflows(tmp_path: Path) -> None:
+    """A check whose subject has disappeared must not report success."""
+    empty = tmp_path / "none"
+    empty.mkdir()
+    errors = check_workflow_hardening.check(empty)
+    assert any("nothing to check" in e for e in errors)
+
+
+# --------------------------------------------------------------------------
+# 3.40 -- dbt-bouncer actually ran its checks
+# --------------------------------------------------------------------------
+
+
+def _bouncer_results(tmp_path: Path, outcome: str = "success", n: int = 25) -> Path:
+    runs = [
+        {
+            "check_run_id": f"check_one_yml_per_sql:{i}:er_x",
+            "outcome": outcome,
+            "severity": "error",
+        }
+        for i in range(n)
+    ]
+    p = tmp_path / "bouncer.json"
+    p.write_text(json.dumps(runs))
+    return p
+
+
+def test_bouncer_ran_passes_on_a_healthy_run(tmp_path: Path) -> None:
+    assert check_bouncer_ran.check(_bouncer_results(tmp_path)) == []
+
+
+def test_bouncer_ran_rejects_a_run_that_matched_nothing(tmp_path: Path) -> None:
+    """The measured case: SUCCESS=0 WARN=2 ERROR=0 exits 0 (D.0 finding 20)."""
+    p = tmp_path / "bouncer.json"
+    p.write_text(json.dumps([]))
+    errors = check_bouncer_ran.check(p)
+    assert any("matches nothing" in e for e in errors)
+
+
+def test_bouncer_ran_rejects_warned_checks(tmp_path: Path) -> None:
+    """A check that RAISES is downgraded to a warning and the run stays green."""
+    errors = check_bouncer_ran.check(_bouncer_results(tmp_path, outcome="warning"))
+    assert any("'warning'" in e for e in errors)
+
+
+def test_bouncer_ran_rejects_a_missing_custom_check(tmp_path: Path) -> None:
+    """Section 6.2: an import failure is a WARNING that leaves the run green."""
+    runs = [
+        {"check_run_id": f"check_model_names:{i}:er_x", "outcome": "success"} for i in range(25)
+    ]
+    p = tmp_path / "bouncer.json"
+    p.write_text(json.dumps(runs))
+    errors = check_bouncer_ran.check(p)
+    assert any("check_one_yml_per_sql" in e for e in errors)
+
+
+def test_bouncer_ran_rejects_a_missing_results_file(tmp_path: Path) -> None:
+    errors = check_bouncer_ran.check(tmp_path / "nope.json")
+    assert any("does not exist" in e for e in errors)

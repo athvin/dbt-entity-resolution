@@ -246,6 +246,20 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.56",
+        what="unpin a CI action to a mutable tag",
+        mutate="noop",
+        command=("python", "scripts/check_workflow_hardening.py"),
+        expect="40-character commit SHA",
+        edits=(
+            (
+                ".github/workflows/ci.yml",
+                ("actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5"),
+                "actions/checkout@v5",
+            ),
+        ),
+    ),
+    Injection(
         standard="3.72",
         what="nest a unit_tests: block under a models: entry",
         mutate="nest_unit_tests:" + str(MODEL_YML),

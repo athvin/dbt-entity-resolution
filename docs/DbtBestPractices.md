@@ -257,7 +257,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | | **— v2 additions. All `[UNVERIFIED]`. Numbers 3.1–3.37 are stable ids and are never reused (§23). —** | | | |
 | 3.38 | Every standard in this matrix is observed to **fail** when violated | `scripts/verify_gates.py`: inject each violation in a scratch copy, assert non-zero exit **and** the expected error string | CI | Job fails naming the standard that did not fire |
 | 3.39 | Every mechanism named in this matrix exists and is wired up | `scripts/check_standards_matrix.py` parses §3 and cross-references `.pre-commit-config.yaml`, `dbt-bouncer.yml`, `.sqlfluff` | P + CI | Non-zero exit naming the orphaned rule |
-| 3.40 | Custom bouncer checks are registered, not merely present | Assert expected check names and a minimum count in the bouncer result; loader WARNINGs are treated as errors | CI | Job fails |
+| 3.40 | Custom bouncer checks are registered **and the suite actually ran** | Assert expected check names, a **minimum SUCCESS count**, and **zero WARNs** in the bouncer result; loader *and execution* warnings are treated as errors. Extended 2026-08-23 by D.0 finding 20: `SUCCESS=0 WARN=2 ERROR=0` **exits 0**, so a registration check alone passes a config that matches nothing | CI | Job fails |
 | 3.41 | No CI job may select zero nodes | Minimum-node-count assertion beside every `--select` in the workflow | CI | Job fails |
 | 3.42 | The tag vocabulary is governed; every declared tag matches ≥ 1 node | Policy macro rejects tags outside `er_allowed_tags`; CI asserts none is unused | C + CI | `raise_compiler_error` / job fails |
 | 3.43 | Waivers are per-check, reasoned, capped, and printed on every run | `er_standards_exempt` is a mapping of model → \[check, …\] with a reason; CI asserts the cap; the macro echoes the active list in its success message | C + CI | Compile failure / cap assertion fails |
@@ -273,7 +273,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | 3.53 | Column budget: no `_l`/`_r` passthrough unless the debug var is set | Policy macro checks declared columns on the two pair-grain models against `er_retain_matching_columns` | C | `raise_compiler_error` |
 | 3.54 | No build artefact is ever committed | `.gitignore` + a pre-commit hook rejecting staged `target/`, `dbt_packages/`, `*.duckdb` — `.gitignore` alone loses to `git add -f` | P | Hook fails |
 | 3.55 | Fixtures and seeds are synthetic; no secrets, no real person data | `detect-private-key` + a PII heuristic scan over `seeds/`, `fixtures/`, `harness/` | P + CI | Non-zero exit |
-| 3.56 | CI actions are SHA-pinned, least-privilege, and do not persist credentials | Workflow lint asserting `uses:` carries a 40-char SHA, per-job `permissions:`, `persist-credentials: false` | CI | Job fails |
+| 3.56 | CI actions are SHA-pinned, least-privilege, and do not persist credentials | `scripts/check_workflow_hardening.py`: asserts every `uses:` carries a 40-char SHA, every job declares `permissions:`, every checkout sets `persist-credentials: false`, and **no workflow uses `pull_request_target`** — §15 states that position and C.7's `GITHUB_ENV` heredoc is why | P + CI | Non-zero exit naming the workflow and job |
 | 3.57 | The enforcement scripts are themselves tested, positively and negatively | pytest over `scripts/` and `dbt_bouncer_checks/` with a coverage floor; every script ships a failing-case test | P + CI | Non-zero exit |
 | 3.58 | Environment determinism is pinned, not assumed | `PYTHONHASHSEED=0`, `TZ=UTC`, `LC_ALL=C` set in `Makefile` and workflow env, and asserted in the determinism job | CI | Job fails |
 | 3.59 | Float-exact gates run only on the normative platform | Determinism job asserts `linux/amd64` (§22); architecture-independent gates are labelled as such | CI | Job fails |
@@ -3836,6 +3836,49 @@ the lost original and **verified against dbt-bouncer 3.8.0**, which is the claim
 The perf-gate threshold is a **labelled placeholder**. B.5 cites the original as "30s/120s/300s", numbers
 that appear nowhere else in the document because they were in the deleted file, and B.5 is blocked on B.6
 for the history to calibrate against. Absolute-only and generous, and it says so.
+
+#### Step 5 (CI), same day
+
+`.github/workflows/ci.yml` exists with C.7's nine deltas applied, and **six of §15's twelve jobs**: `lint`,
+`python-tests`, `build`, `bouncer`, `verify-gates`, `ci-gate`. The other six arrive **with the machinery
+they gate** — `parity` needs a harness, `comparator-sensitivity` needs Stage 0.7, `consumer-smoke` needs a
+published ref. A job asserting nothing is worse than a job that does not exist, because it reads as cover.
+
+24. **3.40 is not sufficient as written, and the fix is in this workflow.** D.0 finding 20 showed
+    dbt-bouncer exiting 0 on `SUCCESS=0 WARN=2 ERROR=0`. The row said to assert *"expected check names and a
+    minimum count"*; a **registration** check alone still passes a config that matches nothing. The
+    `bouncer` job now asserts a **minimum SUCCESS count**, **zero WARNs**, and the custom check by name. The
+    3.40 row is amended to match, per §23's rule that a changed standard states its mechanism in the same
+    PR.
+25. **3.56 had no mechanism, and now has one.** `scripts/check_workflow_hardening.py` asserts every `uses:`
+    carries a 40-character SHA, every job declares `permissions:`, every checkout sets
+    `persist-credentials: false`, and **no workflow uses `pull_request_target`** — §15 states that position,
+    and C.7's `GITHUB_ENV` heredoc is the reason it matters. Five failing-case tests; registered in
+    `verify_gates.py`, which brings the covered count to **15**.
+26. **Delta 8 is not applied, and that is the correct outcome.** It restores the prior observability
+    artefact *"per Appendix B.6's resolution"* — and B.6 is **open**. Applying B.6(a) before B.7 is decided
+    also widens the §14.10 egress (RC52). The step is absent with the reason recorded beside it, rather
+    than present and inert.
+27. **The `GITHUB_ENV` model-JSON step ships commented out**, because
+    `fixtures/model_jsons/fake_1000_v1.json` does not exist until Stage 0.4. A heredoc reading a missing
+    file would fail the job for a reason unrelated to the change under test.
+
+28. **The first CI run failed, and it failed on my own assertion rather than on the code.** The `bouncer`
+    job reported `SUCCESS=25 WARN=0 ERROR=0` and then **exited 1**: my registration check grepped
+    dbt-bouncer's rendered table, and **the rich table wraps and truncates check names to the terminal
+    width**. It passed locally and failed on a runner of a different width. That is the same class of defect
+    as finding 20 one layer up — an assertion whose result depends on something other than what it claims to
+    measure. Fixed by reading `--output-format json`, and the assertion moved into
+    `scripts/check_bouncer_ran.py` so `make bouncer` and CI run the **same code** rather than two similar
+    ones (§17). Five failing-case tests, including the measured `SUCCESS=0` case.
+
+    **`ci-gate` went red because an upstream job did, which is the behaviour it exists for.** The single
+    required status check worked on its first outing.
+
+**The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
+tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
+build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`
+rather than written again.
 
 #### The standard finding 4 asks for
 
