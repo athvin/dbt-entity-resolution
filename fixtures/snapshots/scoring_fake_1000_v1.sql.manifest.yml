@@ -1,0 +1,24 @@
+---
+# Provenance for a REVIEWED SNAPSHOT (3.62, Stage 1 AC).
+#
+# Splink 4.0.16's own scoring projection, captured from
+# `predict_from_comparison_vectors_sqls_using_settings`. It shows the shape
+# section 3.1 describes -- linear product, clamp, ONE log2 -- and it shows the
+# clamped product written out THREE times, which is what D11 rec 4 objects to
+# and B.8 / DR-23 resolves with a lateral column alias.
+kind: baseline
+synthetic: true
+splink_version: "4.0.16"
+model_json_sha256: "02ede04136994e937fa685b0e8beaf1b7d97ca4a8ecb8f2bd0631abcd8e21c44"
+seed: 20260823
+duckdb_version: "1.5.5"
+sqlglot_version: "30.17.0"
+platform:
+  os: "darwin"
+  architecture: "arm64"
+  duckdb_build: "1.5.5"
+date: "2026-08-23"
+producing_commit: "6961d47"
+captured_from: >-
+  splink.internals.predict.predict_from_comparison_vectors_sqls_using_settings,
+  the __splink__df_predict projection, truncated before the passthrough columns

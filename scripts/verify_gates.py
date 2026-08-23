@@ -346,6 +346,20 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.79",
+        what="drop the clamp from the scoring product",
+        mutate="noop",
+        command=("pytest", "tests_python/test_match_weight_sql.py", "-q", "--no-header"),
+        expect="assert",
+        edits=(
+            (
+                "macros/sql_gen/er_match_weight_sql.sql",
+                "least(greatest({{ product }}, 1e-300), 1e300) as bf_clamped",
+                "({{ product }}) as bf_clamped",
+            ),
+        ),
+    ),
+    Injection(
         standard="3.78",
         what="drop the coalesce wrapper from the blocking exclusion",
         mutate="noop",
