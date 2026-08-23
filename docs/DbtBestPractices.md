@@ -3282,13 +3282,17 @@ enumerates and they are listed unfilled rather than omitted, so the gap is visib
 > table — C.1's delta 10 currently gestures at "a package-owned macro" without any block recording what
 > changes in it.
 
-### C.5 `dbt-bouncer.yml` — **text lost with the scaffold; must be reconstructed and re-verified**
+### C.5 `dbt-bouncer.yml` — **reconstructed 2026-08-23; the repository file is canonical**
 
-**This block has no content, and that is the honest statement of it.** The as-executed file was
-`[VERIFIED]`, but it lived in the scaffold Appendix D records as *"built, run, and then deliberately
-removed so this document could stand alone"* — and unlike C.1–C.4, C.6 and C.7, its text was never copied
-in. **It now exists nowhere: not in the repository, not in this document.** The marker is therefore
-downgraded: nothing here has been executed, because there is nothing here.
+**The file now exists at `dbt-bouncer.yml`, and per §23's canonical-home rule that file is canonical.**
+This section keeps the provenance and the reasoning; it does not keep a second copy.
+
+**Provenance: `[UNVERIFIED]` against the lost original, `[RUN]` against dbt-bouncer 3.8.0.** The
+as-executed file was `[VERIFIED]`, but it lived in the scaffold Appendix D records as *"built, run, and
+then deliberately removed so this document could stand alone"* — and unlike C.1–C.4, C.6 and C.7, its text
+was never copied in, so it existed nowhere. What is in the repository is a **reconstruction** from the
+sources listed below, and it passes 25 checks on the pinned version. It is not, and cannot be, a
+restoration.
 
 That matters beyond the missing file, because three other rules depend on it: 3.39's
 `check_standards_matrix.py` is specified to cross-reference it, §8.3 says the pair-versus-entity grain
@@ -3796,6 +3800,42 @@ rest of the scaffold.
 §3 matrix do not, and `verify_gates.py` prints that number on every run so the gap is a figure rather than
 an impression. **Waiver B-1 does not expire yet** — it expires when the matrix is covered, not when the
 script exists.
+
+#### Step 4c (`dbt-bouncer.yml`, reconstructed), same day
+
+C.5's file is rebuilt from the sources C.5 itself enumerates — §3's mechanism column, §6 and 6.2, §7,
+§8.3's grain boundary, and §13's surviving regex. **25 checks, all passing.** It is `[UNVERIFIED]` against
+the lost original and **verified against dbt-bouncer 3.8.0**, which is the claim that matters.
+
+20. **dbt-bouncer can run ZERO checks successfully and still exit 0.** Omitting `package_name: dbt_er` —
+    one of the five structural points C.5 *did* record — made bouncer filter to the root project, which owns
+    no models: every model belongs to the `dbt_er` package installed into `integration_tests/`. The
+    coverage checks then divided by zero, dbt-bouncer downgraded them to **WARN**, and the run reported
+    `SUCCESS=0 WARN=2 ERROR=0` and **exited 0**.
+
+    This is §6.2's loader-warning finding **generalised**, and it is worse than 3.40 currently states.
+    3.40 says loader warnings must be treated as errors; this shows that a check raising **during
+    execution** also becomes a warning, and that `SUCCESS=0` is itself a green run. **3.40's assertion must
+    therefore include a minimum success count, not only a registration check** — a config that silently
+    matches nothing is exactly the vacuous pass §12.7 is written about.
+21. **`dbt-bouncer list` and the config file use different vocabularies.** `list` prints class names in
+    PascalCase (`CheckModelNames`); the config expects snake_case (`check_model_names`). A config
+    reconstructed from `list` output validates as *entirely unknown checks*. **§3's mechanism column is
+    correct** — I briefly recorded the opposite here before `dbt-bouncer validate` disproved it, which is
+    the argument for running `validate` before anything else.
+22. **`check_model_property_file_location` contradicts 3.1.** It enforces dbt-labs' `_<model>.yml`
+    convention, the opposite of this project's `<model>.yml`; adding it produced *"does not start with an
+    underscore"* against a correctly-named file. 3.2's underscore rule applies to **non-resource** YAML
+    only. Not used.
+23. **§8.3's `[VERIFIED]` claim held, against my own model.** `er_thresholds` shipped with a *column-level*
+    `primary_key`, which is **invisible to `check_model_has_constraints`** — so the coverage gate would have
+    silently passed an unkeyed model. §8.3 says primary keys are always declared at model level, even
+    single-column ones, and this is why. The gate caught it; the model was fixed, and the DDL now reads
+    `PRIMARY KEY(thr_auto_merge)`.
+
+The perf-gate threshold is a **labelled placeholder**. B.5 cites the original as "30s/120s/300s", numbers
+that appear nowhere else in the document because they were in the deleted file, and B.5 is blocked on B.6
+for the history to calibrate against. Absolute-only and generous, and it says so.
 
 #### The standard finding 4 asks for
 

@@ -141,7 +141,18 @@ INJECTIONS: tuple[Injection, ...] = (
         mutate="noop",
         command=GATE,
         expect="no primary_key constraint",
-        edits=((str(MODEL_YML), "          - type: primary_key\n", ""),),
+        # The anchor moved when the key moved from column level to model level
+        # (section 8.3 -- a column-level primary_key is invisible to
+        # check_model_has_constraints). The registry breaking loudly on that is
+        # the behaviour wanted: an injection whose anchor has drifted is an
+        # injection that is no longer testing what it claims.
+        edits=(
+            (
+                str(MODEL_YML),
+                "    constraints:\n      - type: primary_key\n        columns: [thr_auto_merge]\n",
+                "",
+            ),
+        ),
     ),
     Injection(
         standard="3.11",

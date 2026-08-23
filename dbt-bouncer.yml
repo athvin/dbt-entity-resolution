@@ -1,0 +1,129 @@
+---
+# ---------------------------------------------------------------------------
+# RECONSTRUCTED, 2026-08-23. C.5 records that this file's as-executed text was
+# lost with the deleted scaffold (Appendix D) and existed "nowhere -- not in the
+# repo, not in the doc" (RC50). Rebuilt from the sources C.5 enumerates:
+# section 3's mechanism column, section 6 and 6.2, section 7, section 8.3's
+# grain boundary, and section 13's surviving regex fragment.
+#
+# It is therefore [UNVERIFIED] against the original. It is verified against
+# dbt-bouncer 3.8.0, which is the claim that matters -- and 3.44 demotes it the
+# moment that pin moves.
+#
+# A trap worth naming, because it cost a wrong turn here: `dbt-bouncer list`
+# displays CLASS names in PascalCase (`CheckModelNames`), while the CONFIG
+# expects snake_case (`check_model_names`). Reconstructing this file from `list`
+# output produces a config that validates as entirely unknown checks. Section 3's
+# mechanism column is correct; `list` is a different vocabulary for the same
+# things. `dbt-bouncer validate` catches it immediately, which is why it runs
+# before anything else here.
+# ---------------------------------------------------------------------------
+
+dbt_artifacts_dir: integration_tests/target
+# LOAD-BEARING, and one of the five structural points C.5 did record. The
+# manifest is built from integration_tests/, whose own package contains no
+# models -- every model belongs to the `dbt_er` package installed into it.
+# Without this, dbt-bouncer filters to the root package, sees ZERO models, and
+# the coverage checks divide by zero.
+package_name: dbt_er
+custom_checks_dir: ./dbt_bouncer_checks
+severity: error
+
+manifest_checks:
+  # ---- 3.1: the 1:1 colocated properties-file rule ------------------------
+  # The custom check does the real work; these two are the parts dbt-bouncer
+  # already expresses. Section 6.2: the loader glob is `*/*.py`, so the custom
+  # check MUST live in a subdirectory, and an import failure is a WARNING that
+  # leaves the run green -- which is why 3.40 asserts registration separately.
+  - name: check_one_yml_per_sql
+  - name: check_model_documented_in_same_directory
+  # NOT check_model_property_file_location: it enforces dbt-labs' `_<model>.yml`
+  # convention, which is the OPPOSITE of 3.1's `<model>.yml`. Adding it produced
+  # "does not start with an underscore" against a correctly-named file. 3.2's
+  # underscore rule applies to NON-resource YAML only.
+
+  # ---- 3.33 / section 10.5: identifiers ------------------------------------
+  # require_unique_project_resource_names is on, so an unprefixed model name can
+  # collide with a consumer's own.
+  - name: check_model_names
+    include: ^models/staging
+    model_name_pattern: ^er_stg_
+  - name: check_model_names
+    include: ^models/intermediate
+    model_name_pattern: ^er_(int_|tf_|train_|eval_|diag_|thresholds|review_)
+  - name: check_model_names
+    include: ^models/marts
+    model_name_pattern: ^er_
+  - name: check_macro_name_matches_file_name
+
+  # ---- 3.11 / section 7, per D11: table everywhere -------------------------
+  # No `exclude:` scope. Under D11 there is nothing to exclude.
+  - name: check_model_materialization_permitted
+    permitted_materializations: [table]
+
+  # ---- 3.3 / 3.6: contracts, keys and column types -------------------------
+  - name: check_model_has_contracts_enforced
+  - name: check_model_has_constraints
+    required_constraint_types: [primary_key]
+    # Section 8.3's GRAIN SPLIT lives in this include: entity-grain models take
+    # a DDL primary key; pair-grain models take
+    # dbt_utils.unique_combination_of_columns plus a recorded waiver, because a
+    # composite VARCHAR PK measured ~100x the cost of the test and builds a
+    # ~1.8 GiB ART index at 10M rows. The regex IS the boundary -- losing it is
+    # how the split silently becomes "some models have keys".
+    include: ^models/(staging|marts)|^models/intermediate/er_(tf_all|thresholds)
+  - name: check_model_single_primary_key
+  - name: check_model_columns_have_types
+
+  # ---- 3.4 / section 10: documentation -------------------------------------
+  - name: check_model_description_populated
+  - name: check_model_documentation_coverage
+    min_model_documentation_coverage_pct: 100
+
+  # ---- 3.19 / 3.20: test coverage ------------------------------------------
+  - name: check_model_test_coverage
+    min_model_test_coverage_pct: 100
+  - name: check_model_has_unique_test
+  # 3.20, unscoped per D12. The `recursive` and fixed-schema exemptions are gone:
+  # M17's own [RECON] showed recursive USING KEY models unit-test fine on the
+  # pinned toolchain, so the guard argued against its own evidence.
+  - name: check_model_has_unit_tests
+    min_number_of_unit_tests: 1
+
+  # ---- 3.24: no statement-level ORDER BY in a model body -------------------
+  # Section 13's surviving fragment, verbatim. M15 measured a total ORDER BY in
+  # a CTAS at 4.2x (7.18s against 1.69s on 5.5M rows) and proved it unnecessary:
+  # clustering output hashed identically UNORDERED across six runs. Targets only
+  # a trailing statement-level ORDER BY; window and ARG_MAX clauses are required
+  # and unaffected.
+  - name: check_model_code_does_not_contain_regexp_pattern
+    regexp_pattern: (?is).*\n\s*order\s+by[^)]*$
+
+  # ---- 3.67 / section 7.3: no non-recursive CTE in a model body ------------
+  # A CTE that is not recursive should be a dbt model: section 7.3 lists six
+  # things a CTE forfeits, starting with the contract.
+  #
+  # `WITH RECURSIVE` is permitted, and DR-24 scopes 7.3.1 so a pure
+  # single-source projection of a ref()ed relation may accompany it -- D4's
+  # `bidir` adapter. 3.68 remains UNENFORCED for want of a parser that handles
+  # USING KEY, so `WITH RECURSIVE` is currently a one-word waiver for this rule.
+  - name: check_model_code_does_not_contain_regexp_pattern
+    regexp_pattern: (?is)^\s*with\s+(?!recursive)
+
+  - name: check_model_does_not_use_select_star
+
+catalog_checks:
+  - name: check_column_description_populated
+    min_description_length: 10
+  - name: check_columns_are_all_documented
+
+run_results_checks:
+  # ---- 3.28: performance regressions fail the build ------------------------
+  # PLACEHOLDER VALUE, and labelled as one. B.5 cites the original thresholds as
+  # "30s/120s/300s" and those numbers appear nowhere else in the document -- they
+  # were in the deleted file. B.5 also says they should be set from the trailing
+  # median in model_perf_trend once real fixture data exists, and is BLOCKED ON
+  # B.6 for that history. Until then this is absolute-only, and generous, which
+  # is the honest state rather than a number pretending to be calibrated.
+  - name: check_run_results_max_execution_time
+    max_execution_time_seconds: 300

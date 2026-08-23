@@ -48,6 +48,14 @@ models:
     config:
       contract:
         enforced: true
+    # Section 8.3: primary keys are ALWAYS declared at model level, even
+    # single-column ones. check_model_has_constraints reads only
+    # `model.constraints`, so a column-level primary_key is invisible to it
+    # [VERIFIED] and the coverage gate would silently pass an unkeyed model.
+    # Declaring both levels is an error dbt rejects outright.
+    constraints:
+      - type: primary_key
+        columns: [thr_auto_merge]
     columns:
       - name: thr_auto_merge
         data_type: double
@@ -58,7 +66,11 @@ models:
           model raises ER-011 at compile time if an entry omits it.
         constraints:
           - type: not_null
-          - type: primary_key
+        data_tests:
+          # 3.19: every model carries a uniqueness test. The DDL primary key
+          # enforces it in the warehouse; this makes the guarantee visible to
+          # the coverage gate, which reads tests rather than constraints.
+          - unique
       - name: thr_review_low
         data_type: double
         description: >
