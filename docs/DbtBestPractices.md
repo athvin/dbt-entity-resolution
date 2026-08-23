@@ -3863,6 +3863,18 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     `fixtures/model_jsons/fake_1000_v1.json` does not exist until Stage 0.4. A heredoc reading a missing
     file would fail the job for a reason unrelated to the change under test.
 
+28. **The first CI run failed, and it failed on my own assertion rather than on the code.** The `bouncer`
+    job reported `SUCCESS=25 WARN=0 ERROR=0` and then **exited 1**: my registration check grepped
+    dbt-bouncer's rendered table, and **the rich table wraps and truncates check names to the terminal
+    width**. It passed locally and failed on a runner of a different width. That is the same class of defect
+    as finding 20 one layer up — an assertion whose result depends on something other than what it claims to
+    measure. Fixed by reading `--output-format json`, and the assertion moved into
+    `scripts/check_bouncer_ran.py` so `make bouncer` and CI run the **same code** rather than two similar
+    ones (§17). Five failing-case tests, including the measured `SUCCESS=0` case.
+
+    **`ci-gate` went red because an upstream job did, which is the behaviour it exists for.** The single
+    required status check worked on its first outing.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`

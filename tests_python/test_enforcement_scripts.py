@@ -14,6 +14,7 @@ is the harder defect to notice later -- which is the same argument 3.38 makes fo
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -23,6 +24,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import check_bouncer_ran  # noqa: E402
 import check_flags_parity  # noqa: E402
 import check_no_nondeterminism  # noqa: E402
 import check_root_packages_minimal  # noqa: E402
@@ -279,3 +281,56 @@ def test_workflow_hardening_fails_when_there_are_no_workflows(tmp_path: Path) ->
     empty.mkdir()
     errors = check_workflow_hardening.check(empty)
     assert any("nothing to check" in e for e in errors)
+
+
+# --------------------------------------------------------------------------
+# 3.40 -- dbt-bouncer actually ran its checks
+# --------------------------------------------------------------------------
+
+
+def _bouncer_results(tmp_path: Path, outcome: str = "success", n: int = 25) -> Path:
+    runs = [
+        {
+            "check_run_id": f"check_one_yml_per_sql:{i}:er_x",
+            "outcome": outcome,
+            "severity": "error",
+        }
+        for i in range(n)
+    ]
+    p = tmp_path / "bouncer.json"
+    p.write_text(json.dumps(runs))
+    return p
+
+
+def test_bouncer_ran_passes_on_a_healthy_run(tmp_path: Path) -> None:
+    assert check_bouncer_ran.check(_bouncer_results(tmp_path)) == []
+
+
+def test_bouncer_ran_rejects_a_run_that_matched_nothing(tmp_path: Path) -> None:
+    """The measured case: SUCCESS=0 WARN=2 ERROR=0 exits 0 (D.0 finding 20)."""
+    p = tmp_path / "bouncer.json"
+    p.write_text(json.dumps([]))
+    errors = check_bouncer_ran.check(p)
+    assert any("matches nothing" in e for e in errors)
+
+
+def test_bouncer_ran_rejects_warned_checks(tmp_path: Path) -> None:
+    """A check that RAISES is downgraded to a warning and the run stays green."""
+    errors = check_bouncer_ran.check(_bouncer_results(tmp_path, outcome="warning"))
+    assert any("'warning'" in e for e in errors)
+
+
+def test_bouncer_ran_rejects_a_missing_custom_check(tmp_path: Path) -> None:
+    """Section 6.2: an import failure is a WARNING that leaves the run green."""
+    runs = [
+        {"check_run_id": f"check_model_names:{i}:er_x", "outcome": "success"} for i in range(25)
+    ]
+    p = tmp_path / "bouncer.json"
+    p.write_text(json.dumps(runs))
+    errors = check_bouncer_ran.check(p)
+    assert any("check_one_yml_per_sql" in e for e in errors)
+
+
+def test_bouncer_ran_rejects_a_missing_results_file(tmp_path: Path) -> None:
+    errors = check_bouncer_ran.check(tmp_path / "nope.json")
+    assert any("does not exist" in e for e in errors)

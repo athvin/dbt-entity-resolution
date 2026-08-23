@@ -168,7 +168,9 @@ docs:
 
 bouncer:
 	@if [ -f dbt-bouncer.yml ]; then \
-		uv run dbt-bouncer --config-file dbt-bouncer.yml -v; \
+		uv run dbt-bouncer run --config-file dbt-bouncer.yml \
+			--output-file target/bouncer.json --output-format json; \
+		uv run python scripts/check_bouncer_ran.py target/bouncer.json; \
 	else \
 		echo "dbt-bouncer.yml does not exist yet (D.1 step 4, and C.5 -- its"; \
 		echo "text was lost with the deleted scaffold and must be"; \

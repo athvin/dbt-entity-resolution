@@ -212,37 +212,20 @@ jobs:
         with:
           name: dbt-artifacts
           path: integration_tests/target/
-      - run: uv run dbt-bouncer --config-file dbt-bouncer.yml -v | tee bouncer.log
+      # --output-format json, NOT the rendered table. The rich table wraps and
+      # TRUNCATES check names to fit the terminal width, so a grep against it
+      # passes or fails depending on how wide the runner thinks it is. Found by
+      # this job failing on its first CI run while reporting SUCCESS=25.
+      - name: run dbt-bouncer
+        run: >-
+          uv run dbt-bouncer run --config-file dbt-bouncer.yml
+          --output-file bouncer.json --output-format json
 
-      # 3.40, EXTENDED by Appendix D.0 finding 20. The row said "assert expected
-      # check names and a minimum count; treat loader WARNINGs as errors". That
-      # is not enough: dbt-bouncer downgrades a check that raises DURING
-      # EXECUTION to a warning too, and `SUCCESS=0 WARN=2 ERROR=0` exits 0.
-      # Measured, on this repository, by omitting package_name.
-      #
-      # So the assertion is on the SUCCESS count, not only on registration: a
-      # config that silently matches nothing is section 12.7's vacuous pass.
+      # 3.40, EXTENDED by Appendix D.0 finding 20 -- see the script for the
+      # measurement. Section 17: the same code runs from `make bouncer`, so a
+      # local pass is a CI pass rather than a similar-looking one.
       - name: assert bouncer actually ran its checks
-        run: |
-          line=$(grep -oE 'SUCCESS=[0-9]+ WARN=[0-9]+ ERROR=[0-9]+' bouncer.log | tail -1)
-          echo "bouncer: $line"
-          s=$(echo "$line" | sed -E 's/.*SUCCESS=([0-9]+).*/\1/')
-          w=$(echo "$line" | sed -E 's/.*WARN=([0-9]+).*/\1/')
-          if [ "$s" -lt 20 ]; then
-            echo "::error::only $s checks succeeded; expected >= 20."
-            echo "A config that matches nothing exits 0 (Appendix D.0 finding 20)."
-            exit 1
-          fi
-          if [ "$w" -ne 0 ]; then
-            echo "::error::$w check(s) WARNed. A check that raises is downgraded"
-            echo "to a warning and the run stays green."
-            exit 1
-          fi
-          if ! grep -q 'check_one_yml_per_sql' bouncer.log; then
-            echo "::error::the custom check did not register. A loader failure"
-            echo "is a WARNING that leaves the run green (section 6.2)."
-            exit 1
-          fi
+        run: uv run python scripts/check_bouncer_ran.py bouncer.json
 
   verify-gates:
     name: verify-gates (blocking)
