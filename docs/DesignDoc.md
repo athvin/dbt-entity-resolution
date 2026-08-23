@@ -1304,9 +1304,9 @@ worth stating twice:
   2. Decide **DR-17 / G3** (the model-JSON trust boundary — the one that is architecture), then
      disposition the remaining `MISSING` rows. Per RC30 only DR-16 and DR-17 are missing in full.
   3. Close **DR-16 / G2+G9** — the input contract. It gates every model reading `stg_input`.
-  4. Settle **`DbtBestPractices.md` B.1 / DR-13** (runtime substrate). Its own text says it must precede
-     the 0.3 harness, and RC45 warns it otherwise resolves itself by drift the moment Appendix C.3's
-     `profiles.yml` is rebuilt verbatim — so it is decided *before* 0.9 touches that file.
+  4. ~~Settle **`DbtBestPractices.md` B.1 / DR-13**~~ — **done 2026-08-23**, before 0.9 could touch
+     `profiles.yml`, which is what RC45 asked for. The harness reads only parquet and never opens the
+     database; dbt keeps a file database.
   5. Rebuild the scaffold — **0.9**, below.
   6. Build the comparator sensitivity suite — **0.7**, below.
   7. Then 0.1–0.6 and 0.8.
@@ -1339,8 +1339,11 @@ worth stating twice:
     version** (RC54), producing commit, and the **platform triple** G5 needs and RC21 records as still
     missing.
 
-  **Blocked by `DbtBestPractices.md` B.1 / DR-13** — DuckDB's process-level lock means the harness and dbt
-  cannot both hold the database, and which way that resolves decides what this script writes and reads.
+  **The harness reads only parquet** (B.1 / DR-13, CURRENT). DuckDB's process-level lock means the harness
+  and dbt cannot both hold the database, so the harness never opens it: `integration_tests/` exports every
+  compared model to parquet with a `COPY` post-hook, and this script's baselines are parquet already. Both
+  sides of every comparator are therefore the same format, which is what makes a comparator's join key the
+  only thing that can be wrong.
 - 0.4 Freeze `model_jsons/fake_1000_v1.json` + baselines. **Must follow 0.7.** Also: fix the frozen model
   rather than freezing a bad one — it measures F1 = 0.72 and blocking recall = 0.51, and two extra
   blocking rules take it to F1 = 0.98 (M12, §A.6 Q5).
@@ -3574,7 +3577,7 @@ force), **SUPERSEDED** (with the pointer), **OPEN** (needs an answer), **CONFLIC
 | DR-10 | Tolerance policy | CURRENT, split across two tables | A.4's table | **R2** |
 | DR-11 | Stage inventory | **CURRENT (2026-08-23)** | **§5 is the single inventory.** A.5 absorbed into it and retained as evidence; A.5 is stale where the two disagree | Closes **R3**, executed from RC29's enumeration. Supersedes A.5-as-inventory, §5 Stage 4's "every distinct threshold constant" AC, §5 Stage 9's EM AC, and the single-boolean stage-decoupling mechanism. Adds Stages 2b, 6b, 12b, sub-stages 0.0/0.6/0.7/0.8/0.9, and the critical path. **Delegated authority** — see the F13 note at §5 |
 | DR-12 | `entity_id` vs `component_label` | **OPEN — decide with DR-14** | Engine posture implies `component_label` | M6(a) |
-| DR-13 | Runtime substrate | OPEN | — | M17; `DbtBestPractices.md` Appendix B.1 recommends `:memory:` + parquet |
+| DR-13 | Runtime substrate | **CURRENT (2026-08-23)** | **The harness reads only parquet and never opens the database; dbt keeps a file database.** Models the harness compares are exported by a `COPY` post-hook in `integration_tests/`, never in the package (3.52) | Closes `DbtBestPractices.md` **B.1**, adopting M17 rec (a)'s *harness contract* but **rejecting its `:memory:` substrate**: C.7's build job runs five separate dbt invocations, so an in-memory database would make `dbt seed` unimplementable and `dbt docs generate` catalog an empty database — a vacuously-passing catalog tier. D11 unaffected; the export is a post-hook, not a materialization. **Delegated authority** |
 | DR-14 | Product posture | **CURRENT (2026-08-20)** | **Engine the platform calls** | §A.6 Q1, resolved and marked |
 | DR-15 | Supported configuration for v1 | CURRENT, not propagated | `dedupe_only`, VARCHAR id, no sds, equi-join only | Stage 12.1; **G18** |
 | DR-16 | Input contract | **CURRENT (2026-08-23)** | **§2.0.** One relation named by `er_input_relation` (the package ships zero sources); v1 arity is one table because Stage 12.1 forbids `source_dataset`, and the consumer owns the union when v2 needs one; `unique_id` VARCHAR / NOT NULL / UNIQUE; declared columns are a parse-time var; a missing column fails at **compile time naming the column**; the three preconditions ship as tests **in the package** | Closes **G2**, **G9**. Hoists `unique_id`'s VARCHAR requirement out of Stage 12.1. The consumer owns input ordering — a relation name creates no DAG edge. **Delegated authority** — see §2.0 |
