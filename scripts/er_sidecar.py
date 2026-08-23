@@ -603,8 +603,12 @@ def resolve(model: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def column_lists(resolved: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+def column_lists(resolved: dict[str, Any]) -> dict[str, list[Any]]:
     """M2's `er_gamma_columns` and `er_bf_columns`, as dbt `columns:` entries.
+
+    Also `er_tf_columns` (D7a), which is a plain list of names rather than
+    `columns:` entries -- it selects rows in `er_tf_all`, it does not contract
+    columns. The looser return type is that difference, not sloppiness.
 
     **dbt parses `schema.yml` as YAML BEFORE rendering Jinja**, so a `{% for %}`
     cannot emit YAML structure -- which silently removes contracts, per-column
@@ -622,6 +626,11 @@ def column_lists(resolved: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
     """
     gamma: list[dict[str, str]] = []
     bayes: list[dict[str, str]] = []
+    # D7a: which columns `tf_all` must carry a distribution for. Derived from the
+    # SAME predicate that decides `bf_tf_adj_`, deliberately -- a TF adjustment
+    # the snapshot has no values for is a run-time failure, and two independently
+    # maintained lists is exactly M2's drift.
+    tf_columns: list[str] = []
     for comparison in resolved["comparisons"]:
         name = str(comparison["output_column_name"]).replace(" ", "_")
         # The gamma CASE emits integer comparison_vector_values.
@@ -632,7 +641,12 @@ def column_lists(resolved: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
         # produces, and dbt raises on the mismatch at run time.
         if any(level["tf_u_exact_match"] is not None for level in comparison["levels"]):
             bayes.append({"name": f"bf_tf_adj_{name}", "data_type": "DOUBLE"})
-    return {"er_gamma_columns": gamma, "er_bf_columns": bayes}
+            tf_columns.append(str(comparison["output_column_name"]))
+    return {
+        "er_gamma_columns": gamma,
+        "er_bf_columns": bayes,
+        "er_tf_columns": tf_columns,
+    }
 
 
 def _safely(call: Any) -> Any:

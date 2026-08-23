@@ -1,0 +1,176 @@
+---
+version: 2
+
+models:
+  - name: er_tf_all
+    description: >
+      **Purpose**. The term-frequency distribution every TF-adjusted comparison
+      scores against, read from a FROZEN SNAPSHOT rather than recomputed
+      (D7a). TF is a property of the whole corpus, so recomputing it makes every
+      pair's score a function of unrelated records -- D7a measures a comparison
+      moving from -6.51 to -8.81 bits because nine unrelated rows arrived, on a
+      pair whose own two records did not change.
+
+
+      **Grain**. One row per `(er_model_sha, er_tf_snapshot_id, column_name,
+      value)`. Long format deliberately: wide would make the grain a function of
+      the model JSON, so adding a TF-adjusted comparison would change every
+      contract and join key downstream. The model decides the rows, never the
+      columns.
+
+
+      **Upstream**. In `frozen` mode, `er_tf_snapshot_relation` -- named by the
+      consumer, because the package ships ZERO sources (M4b). In `refresh` mode,
+      `er_stg_input`, which is the only path that recomputes and exists solely
+      to mint a snapshot.
+
+
+      **Splink parity**. `tf` matches Splink's `compute_tf_table` value for
+      value, including section 3.5's non-null denominator: `count(<col>)` and
+      NOT `count(*)`, so numerator and denominator cover the same population and
+      the frequencies sum to exactly 1.0. The committed snapshot is minted from
+      Splink's own output (`fixtures/baselines/fake_1000/tf_all.parquet`), so
+      the macro is checked against the oracle rather than against itself.
+
+
+      **Determinism**. Frozen mode is a filtered projection over committed data:
+      deterministic by construction. Refresh mode aggregates, so it is minted
+      once under 3.58's pinned environment and then frozen -- which is what
+      makes every later run deterministic regardless of what ingest does.
+
+
+      **Caveats**. A corpus value with no snapshot row **RAISES**; it is never
+      COALESCEd (D7a step 2). This is the rule most likely to be "fixed" by
+      someone reading the absence as a gap, and doing so produces wrong scores
+      that look entirely plausible -- no error, no null, just a systematically
+      mis-weighted comparison. Section 3.2's NULL semantics are "substitute the
+      other side, or no adjustment if neither", which is NOT the same as
+      treating a value as unseen. The guard is the `er_tf_all_covers_the_corpus`
+      data test, because it is a statement about a join and not about this
+      model alone. Two further consequences belong to D7a rather than here: a
+      refresh is a FULL rescore (G7), and the snapshot outlives the records that
+      produced it, so an erasure event is a refresh trigger (G4).
+
+    config:
+      contract:
+        enforced: true
+
+    constraints:
+      - type: primary_key
+        columns: [er_model_sha, er_tf_snapshot_id, column_name, value]
+
+    # `require_generic_test_arguments_property: true` is pinned in
+    # dbt_project.yml, so the conventional top-level form raises
+    # MissingArgumentsPropertyInGenericTestDeprecation -- which is itself an
+    # error under `warn_error_options.error: all`.
+    data_tests:
+      # The grain, asserted. A primary_key CONSTRAINT and a uniqueness TEST are
+      # different claims: the constraint is a declaration dbt-duckdb does not
+      # enforce on a table, so without this the grain is documented and unheld.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - er_model_sha
+              - er_tf_snapshot_id
+              - column_name
+              - value
+      # A frequency outside (0, 1] is not a term frequency. Zero is excluded
+      # because a value with no occurrences has no row at all -- section 3.5's
+      # numerator comes from a GROUP BY over non-null rows, so tf = 0 would mean
+      # the aggregation produced a group with no members.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "tf > 0.0 and tf <= 1.0"
+
+    columns:
+      - name: er_model_sha
+        data_type: varchar
+        description: >
+          sha256 of the canonically-serialised, VALIDATED model JSON. Part of
+          the key because a scored row's identity includes the model that
+          produced it (M8) -- without it, a snapshot cannot be told from its
+          successor.
+        constraints:
+          - type: not_null
+      - name: er_tf_snapshot_id
+        data_type: varchar
+        description: >
+          The minting event. A TF refresh is an explicit, dated operation that
+          mints a new id and re-scores (D7a step 4), so drift is a reviewable
+          event rather than a side effect of ingest.
+        constraints:
+          - type: not_null
+      - name: column_name
+        data_type: varchar
+        description: >
+          Which comparison's distribution this row belongs to. Derived by the
+          sidecar from the same predicate that decides `bf_tf_adj_`, because two
+          independently maintained lists is M2's drift exactly.
+        constraints:
+          - type: not_null
+      - name: value
+        data_type: varchar
+        description: >
+          The source value, as text. VARCHAR because one table holds the
+          distributions of every TF-adjusted column and those columns need not
+          share a type; Splink compares term frequencies by equality on the
+          source value, which a lossless text rendering preserves.
+        constraints:
+          - type: not_null
+      - name: tf
+        data_type: double
+        description: >
+          The term frequency: `count(*) / count(<col>)` over the non-null
+          population. Sums to exactly 1.0 per column (3.82) -- with `count(*)`
+          as the denominator every value comes out proportionally too small, the
+          ordering is unchanged, and the adjustment is silently wrong.
+        constraints:
+          - type: not_null
+
+unit_tests:
+  - name: tf_all_frozen_mode_filters_to_one_snapshot
+    description: >
+      A snapshot relation may legitimately hold several generations. Selecting
+      all of them would multiply every downstream join by the number present --
+      silently, and with plausible results, because each row on its own is
+      well-formed. The fixture carries a second snapshot id and a second model
+      sha that must both be excluded.
+    model: er_tf_all
+    overrides:
+      vars:
+        er_tf_mode: frozen
+        er_model_sha: "sha-current"
+        er_tf_snapshot_id: "snap-2"
+    given:
+      - input: ref('er_tf_snapshot')
+        format: sql
+        rows: |
+          select
+              cast('sha-current' as varchar) as er_model_sha,
+              cast('snap-2' as varchar) as er_tf_snapshot_id,
+              cast('city' as varchar) as column_name,
+              cast('London' as varchar) as value,
+              cast(0.25 as double) as tf
+          union all
+          select
+              cast('sha-current' as varchar) as er_model_sha,
+              cast('snap-1' as varchar) as er_tf_snapshot_id,
+              cast('city' as varchar) as column_name,
+              cast('London' as varchar) as value,
+              cast(0.10 as double) as tf
+          union all
+          select
+              cast('sha-other' as varchar) as er_model_sha,
+              cast('snap-2' as varchar) as er_tf_snapshot_id,
+              cast('city' as varchar) as column_name,
+              cast('London' as varchar) as value,
+              cast(0.90 as double) as tf
+    expect:
+      format: sql
+      rows: |
+        select
+            cast('sha-current' as varchar) as er_model_sha,
+            cast('snap-2' as varchar) as er_tf_snapshot_id,
+            cast('city' as varchar) as column_name,
+            cast('London' as varchar) as value,
+            cast(0.25 as double) as tf

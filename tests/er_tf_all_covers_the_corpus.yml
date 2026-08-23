@@ -1,0 +1,32 @@
+---
+version: 2
+
+data_tests:
+  - name: er_tf_all_covers_the_corpus
+    description: >
+      D7a step 2 -- a corpus value absent from the frozen snapshot RAISES, and
+      is never COALESCEd.
+
+
+      This is the rule most likely to be "fixed" into uselessness. The tempting
+      implementation is `coalesce(tf, <something>)` in the scoring join, and it
+      is wrong in the specific way this project keeps meeting: it produces no
+      error, no null, and a plausible-looking score. Section 3.2 shows Splink's
+      NULL semantics are "substitute the other side, or no adjustment if
+      neither" -- which is emphatically not the same as treating a value as
+      unseen. A defaulted `tf` silently mis-weights every comparison that
+      touches it.
+
+
+      A data test rather than a compile-time raise or a model constraint,
+      because it is a statement about the JOIN between two models: every
+      non-null value in `er_stg_input`, for every TF-adjusted column, must have
+      a row in `er_tf_all`. Neither model can see that alone. The contract
+      guarantees the snapshot's rows are well-formed and unique; it says nothing
+      about whether they COVER the corpus, and a snapshot missing a single value
+      is structurally perfect and semantically wrong.
+
+
+      Returns one row per uncovered value, so a failure names what is missing
+      rather than only that something is. Verified to fire: removing the single
+      `city = 'London'` row from the snapshot turns `PASS=20` into `ERROR=1`.
