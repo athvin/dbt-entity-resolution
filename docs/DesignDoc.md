@@ -176,6 +176,52 @@ compilation naming the function; a model JSON exceeding a bound fails compilatio
 > **Recommendation source:** G3 recommendations 1–5, adopted in full.
 > **Reversible:** reopen DR-17 in §B.3.
 
+### 1.6 The cluster label is `component_label`, and it is not an identifier
+
+**Normative. Closes M6. Register row: DR-12.**
+
+The clustering output column is **`component_label`**. It is the minimum `unique_id` in the connected
+component, per D4's monotone min-label formulation — a deterministic function of the **current** graph, and
+nothing more.
+
+**It is not an entity identifier, and the name now says so.** §1.3 lists entity permanence as a non-goal and
+DR-14 puts it on the platform's side of the boundary. Emitting a column called `entity_id` while disclaiming
+identity invites exactly the thing the disclaimer forbids: a consumer storing it as a CRM master key or a
+warehouse dimension key.
+
+**What makes it not an identifier is measured, not argued.** M6, `[RECON]` on DuckDB 1.5.5 with D4's exact
+formulation: five records chained under `crm:100 … crm:104` all label as `'crm:100'`; adding **one** record
+`billing:7` with a single edge changed the label for **5 of 5 pre-existing records**, though no member left
+the component. Lexicographic ordering is D3's own verified property, so onboarding a source whose alias
+sorts early relabels every cluster it touches, and deleting the minimum member relabels every survivor. A
+merge, a split and a pure relabel are indistinguishable from the outside, because there is no old→new
+mapping and no event log — the only observable is that the row is gone.
+
+**What the contract says, and what it therefore permits:**
+
+| Property | Holds? |
+|---|---|
+| Deterministic for a fixed graph and threshold | **Yes** — this is what makes it a valid grouping key *within* one run's output, and what D4's parity gate asserts |
+| Stable across runs when the corpus changes | **No.** Not weakly, not usually — one insert can rewrite the whole label space |
+| Usable as a durable key by a downstream system | **No.** It is removed as a key from every downstream model, and every column description saying otherwise is a defect |
+
+**Stage 6b collapses into an interface contract**, which is what §A.6 Q1 already declared binding under
+DR-14. The engine does not build `entity_keys`, `cluster_lineage` or `entity_events`; the platform owns
+entity permanence and the incumbent's `INV-PERM`. What the engine owes that platform is the two things
+permanence is computed *from* — the **edge set** at each threshold and the **partition** — both of which it
+already publishes. That is the whole of the interface.
+
+**Why the rename rather than the build.** Both were legitimate (A.5: *"choosing 'rename' is legitimate and
+cheap; leaving it ambiguous is not"*), and the build is the one this project is not for. §1.3 says so, DR-14
+says so, and §A.3 Group 2 already assigns the surrounding machinery to the platform. Building entity
+permanence here would make `dbt-er` an MDM system by accretion.
+
+> **Decided under delegated authority 2026-08-23.**
+> **Recommendation source:** M6 rec (a), and §A.6 Q1's already-binding consequence of DR-14. This row's own
+> trigger — *"decide with DR-14"* — fired on 2026-08-20 without the row closing (RC16); this closes it in
+> the direction Q1 had already declared.
+> **Reversible:** reopen DR-12 in §B.3.
+
 ---
 
 ## 2. What Splink does, as data transformations
@@ -624,6 +670,12 @@ with recursive
 select unique_id, entity_id from cc
 ```
 
+> **The shipped column is `component_label`, not `entity_id` (DR-12, CURRENT 2026-08-23).** The listing
+> above is kept **as executed** — the `[RECON]` runs that established termination, the mandatory `GROUP BY`
+> and the monotone guard all used `entity_id`, and rewriting the evidence would break the claim it
+> supports. The *name* is not what was measured. Read every `entity_id` above as `component_label`; §1.6
+> says why, and Stage 6 ships it under the new name.
+
 > **[REVIEW 2026-08-23] RC2 — This formulation collides with `DbtBestPractices.md` §7.3.1 / 3.67–3.68.**
 > That rule reads "a `WITH RECURSIVE` clause may contain only its recursive term or terms", and `bidir` is
 > a non-recursive companion CTE. §7.3.1's own escape — the seed relation may select directly from a
@@ -1035,9 +1087,14 @@ adjustments are disabled on every level and `match_probability` is forced to `ca
 ### D10 — Survivorship (unchanged from v1 in intent)
 
 Macro-generated window SQL driven by a seed: `attribute, strategy, order_col, tiebreak`, emitting
-`ARG_MAX`/`FIRST_VALUE … OVER (PARTITION BY entity_id ORDER BY <keys>, unique_id)`. The trailing
+`ARG_MAX`/`FIRST_VALUE … OVER (PARTITION BY component_label ORDER BY <keys>, unique_id)`. The trailing
 `unique_id` makes every chain a total order. Output carries `<attr>__source_record` and
 `<attr>__rule_applied` lineage.
+
+`component_label` is the partition column here and **nothing more** (§1.6, DR-12). It groups the members of
+one component for the duration of one run; it does not identify the golden record across runs, and
+`golden_records` must not be keyed on it by anything downstream. A consumer wanting a durable key gets it
+from the platform's permanence layer, which is where DR-14 puts that responsibility.
 
 One rule v1 omitted and which matters in practice: **multi-column attributes must survive as a unit.**
 When an address wins, every `addr_*` column comes from the *single* winning record — never assembled
@@ -1514,7 +1571,8 @@ repeated expression all at once. One of the three must give.
 `node_metrics` / `cluster_metrics` / `edge_metrics` (§3.6).
 
 **On the two model names.** `int_edges` becomes `edges_by_threshold` and `entity_clusters` takes the
-composite key `(thr, unique_id, entity_id)`, because the acceptance criteria below require three thresholds
+composite key `(thr, unique_id, component_label)` — the label column is `component_label`, not `entity_id`
+(§1.6, DR-12) — because the acceptance criteria below require three thresholds
 **simultaneously** and `var('er_threshold')` builds one partition per run. Cross-threshold monotonicity is
 not expressible as a dbt test under the var approach at all (M16). This changes these models' *contract*,
 not merely their SQL — which is why **DR-08 / `DbtBestPractices.md` B.2 closes before this stage is broken
@@ -1551,20 +1609,25 @@ unmarked in the v1 plan; **G18's dead-code catalogue gains this row**, which it 
 **Blocked by DR-09 / G15** — whether there is one threshold or a gray band decides whether gray-band pairs
 enter the graph at all, which changes every acceptance criterion above. And by **DR-08 / B.2**, above.
 
-### Stage 6b — Entity identity
+### Stage 6b — Entity identity · **not built; an interface contract** (DR-12)
 
-**Either build it, or rename the column. Choosing "rename" is legitimate and cheap; leaving it ambiguous
-is not.**
+**Decided 2026-08-23: the column is renamed, not the machinery built.** `entity_id` becomes
+**`component_label`** and is removed as a key from every downstream model. §1.6 carries the decision and
+the measurement behind it; §A.6 Q1 had already declared this consequence of DR-14 *"binding, not
+conditional"*, and DR-12's own trigger fired on 2026-08-20 without the row closing (RC16).
 
-- **Build:** `entity_keys` + `cluster_lineage` + `entity_events`, adopting the incumbent's `INV-PERM`.
-- **Rename:** `entity_id` becomes `component_label`, and it is removed as a key from every downstream
-  model.
+**The engine builds none of `entity_keys`, `cluster_lineage` or `entity_events`.** Entity permanence and
+the incumbent's `INV-PERM` belong to the platform, per §1.3's non-goal and DR-14's posture. Building them
+here would make `dbt-er` an MDM system by accretion, which is the one thing §1.3 says it is not.
 
-`entity_id` is currently emitted as an identifier while §1.3 disclaims identity, and adding a single record
-relabelled 5 of 5 pre-existing records (M6). **DR-12 decides which**, and its stated trigger has already
-fired: it says *"decide with DR-14"*, and DR-14 has been CURRENT since 2026-08-20, with §A.6 Q1 already
-declaring its consequences *"binding, not conditional"* — including this rename — while the body still
-emits `entity_id` throughout D4, D10's `PARTITION BY`, §2 and Stage 6 (RC16).
+**What this stage *is*, therefore, is the interface**, and it is short: the platform's permanence layer is
+computed from the **edge set at each threshold** and the **partition**, and the engine already publishes
+both — `edges_by_threshold` and `entity_clusters`. Stage 6b's deliverable is that this is stated in
+`PARITY.md`'s scope section and in the public API surface (§19.1), so a consumer reads it before building
+on the label rather than after.
+
+No models. No acceptance criteria beyond §1.6's contract table being reflected in `entity_clusters`'s
+column descriptions, which §10.2 requires to say what a column means and whether it is stable.
 
 ### Stage 7 — Survivorship & golden records · parallelisable from day one
 
@@ -2157,7 +2220,12 @@ At 1M records, (b) costs **139% of the full rebuild** and **5.4× the batch-driv
 
 ---
 
-### M6 — `entity_id` is emitted as an identifier while §1.3 disclaims identity; it relabels 100% of a cluster on one insert
+### M6 — `entity_id` is emitted as an identifier while §1.3 disclaims identity; it relabels 100% of a cluster on one insert · **CLOSED 2026-08-23**
+
+> **Closed by §1.6** (DR-12) via this finding's own rec (a): the column is `component_label`, it is removed
+> as a key from every downstream model, and Stage 6b collapses to an interface contract rather than being
+> built. The `[RECON]` evidence below is what the decision rests on and is why the rename was not merely
+> cosmetic.
 
 **Severity:** MAJOR · **Attacks:** D4 (`select unique_id, entity_id from cc`), D4a, §1.3, Stage 7, §6.1 cluster gate
 
@@ -2562,7 +2630,16 @@ Add the standing note: *exact bit equality is the right default because both eng
 
 5. **What is the quality floor, and who owns it?** The frozen reference model in Stage 0.4 measures **F1 = 0.72 / blocking recall = 0.51** on `fake_1000`; a two-rule change lifts F1 to 0.98. Parity gates cannot see the difference. Someone must own (a) the committed per-fixture F1 and recall floors, (b) the justification for `er_threshold`, and (c) whether the gray band is two thresholds or one. Without an owner, Stage 10 is a reporting stage and the product ships at 0.72.
 
-> **[REVIEW 2026-08-23] RC16/RC17 — Two entries above are out of sync with the register.**
+> **[REVIEW 2026-08-23] Fixed (F31) — RC16 is closed: the rename is decided.** DR-12 is CURRENT, §1.6
+> carries the decision, and the body no longer emits `entity_id` as the shipped name — D4's listing is kept
+> as executed with a note, D10 partitions by `component_label`, and Stage 6's composite key is
+> `(thr, unique_id, component_label)`. Stage 6b is an interface contract, not a build, which is the
+> "collapse" Q1 declared. R3's scope no longer lists 2b/6b as open stage deltas — 2b closed as the explicit
+> non-goal in the DR-11 reconciliation, and 6b closes here.
+>
+> <details><summary>Original review note (RC16/RC17), retained</summary>
+>
+> **RC16/RC17 — Two entries above are out of sync with the register.**
 > **Q1 (RC16):** its resolution declares the DR-14 consequences "binding, not conditional", including
 > "`entity_id` becomes `component_label`" and "Stages 6b/2b collapse into interface contracts" — but DR-12
 > records the rename as "OPEN — decide with DR-14" even though DR-14 is CURRENT (2026-08-20), so its
@@ -2576,6 +2653,8 @@ Add the standing note: *exact bit equality is the right default because both eng
 > through as "Resolved in principle, deferred in practice" via D4b and DR-05's value column reads
 > "Recursive CTE for parity; D4b after Stage 6", while Q3 here is unmarked — a scheduling-only residue
 > presented as an open architectural question.
+>
+> </details>
 
 ---
 
@@ -3576,7 +3655,7 @@ force), **SUPERSEDED** (with the pointer), **OPEN** (needs an answer), **CONFLIC
 | DR-09 | One threshold or a gray band | **OPEN — blocks Stage 6** | — | M12 rec 5, A.3 Group 1; **G15** |
 | DR-10 | Tolerance policy | CURRENT, split across two tables | A.4's table | **R2** |
 | DR-11 | Stage inventory | **CURRENT (2026-08-23)** | **§5 is the single inventory.** A.5 absorbed into it and retained as evidence; A.5 is stale where the two disagree | Closes **R3**, executed from RC29's enumeration. Supersedes A.5-as-inventory, §5 Stage 4's "every distinct threshold constant" AC, §5 Stage 9's EM AC, and the single-boolean stage-decoupling mechanism. Adds Stages 2b, 6b, 12b, sub-stages 0.0/0.6/0.7/0.8/0.9, and the critical path. **Delegated authority** — see the F13 note at §5 |
-| DR-12 | `entity_id` vs `component_label` | **OPEN — decide with DR-14** | Engine posture implies `component_label` | M6(a) |
+| DR-12 | `entity_id` vs `component_label` | **CURRENT (2026-08-23)** | **`component_label`** (§1.6). Deterministic for a fixed graph and threshold; **not** stable across runs; removed as a key from every downstream model. Stage 6b collapses to an interface contract — the engine publishes the edge set and the partition, the platform owns permanence | Closes **M6**, whose `[RECON]` measured one insert relabelling 5/5 pre-existing records. Its trigger fired 2026-08-20 when DR-14 went CURRENT; §A.6 Q1 had already declared this binding (RC16). **Delegated authority** |
 | DR-13 | Runtime substrate | **CURRENT (2026-08-23)** | **The harness reads only parquet and never opens the database; dbt keeps a file database.** Models the harness compares are exported by a `COPY` post-hook in `integration_tests/`, never in the package (3.52) | Closes `DbtBestPractices.md` **B.1**, adopting M17 rec (a)'s *harness contract* but **rejecting its `:memory:` substrate**: C.7's build job runs five separate dbt invocations, so an in-memory database would make `dbt seed` unimplementable and `dbt docs generate` catalog an empty database — a vacuously-passing catalog tier. D11 unaffected; the export is a post-hook, not a materialization. **Delegated authority** |
 | DR-14 | Product posture | **CURRENT (2026-08-20)** | **Engine the platform calls** | §A.6 Q1, resolved and marked |
 | DR-15 | Supported configuration for v1 | CURRENT, not propagated | `dedupe_only`, VARCHAR id, no sds, equi-join only | Stage 12.1; **G18** |
