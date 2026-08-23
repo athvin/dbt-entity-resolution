@@ -346,6 +346,20 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.59",
+        what="change one bit of the pinned float reference",
+        mutate="noop",
+        command=("pytest", "harness/test_float_parity.py", "-q", "--no-header"),
+        expect="does not hold across platforms",
+        edits=(
+            (
+                "harness/float_probe.py",
+                '"match_weight": "40345d48400a308f"',
+                '"match_weight": "40345d48400a308e"',
+            ),
+        ),
+    ),
+    Injection(
         standard="3.55",
         what="put a consumer email provider in a fixture",
         mutate="append:fixtures/degenerate/single_row.csv:"

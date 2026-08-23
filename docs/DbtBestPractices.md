@@ -276,7 +276,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | 3.56 | CI actions are SHA-pinned, least-privilege, and do not persist credentials | `scripts/check_workflow_hardening.py`: asserts every `uses:` carries a 40-char SHA, every job declares `permissions:`, every checkout sets `persist-credentials: false`, and **no workflow uses `pull_request_target`** — §15 states that position and C.7's `GITHUB_ENV` heredoc is why | P + CI | Non-zero exit naming the workflow and job |
 | 3.57 | The enforcement scripts are themselves tested, positively and negatively | pytest over `scripts/` and `dbt_bouncer_checks/` with a coverage floor; every script ships a failing-case test | P + CI | Non-zero exit |
 | 3.58 | Environment determinism is pinned, not assumed | `PYTHONHASHSEED=0`, `TZ=UTC`, `LC_ALL=C` set in `Makefile` and workflow env, and asserted in the determinism job | CI | Job fails |
-| 3.59 | Float-exact gates run only on the normative platform | Determinism job asserts `linux/amd64` (§22); architecture-independent gates are labelled as such | CI | Job fails |
+| 3.59 | Float-exact gates run only on the normative platform | `harness/test_float_parity.py` pins the bit patterns and runs on BOTH platforms, so a cross-platform divergence fails at the probe (G5, closed 2026-08-23); the determinism job additionally asserts `linux/amd64` (§22) | CI | Job fails naming the divergent value |
 | 3.60 | A MAJOR-triggering change cannot ship without a MAJOR bump | Contract diff against the previous release tag (§19.2) | CI | Job fails naming the breaking change |
 | 3.61 | The public API surface is enumerated and matches reality | CI asserts every `+access: public` model appears in §19.1's list, and vice versa | CI | Job fails |
 | 3.62 | Every baseline carries a provenance manifest | `scripts/check_baseline_manifests.py`: Splink version, model-JSON sha, seed, DuckDB version, producing commit | P + CI | Non-zero exit |
@@ -3393,6 +3393,26 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     email providers as a blocklist rather than a domain allowlist**: `fake_1000` uses surname-derived
     domains like `humphrey.com`, which an allowlist would reject wholesale, while real person data
     overwhelmingly carries `gmail.com` and its peers.
+
+41. **G5 is closed, and `log2` was the whole worry.** Appendix A measured "exact bit equality" in-process
+    on darwin arm64; baselines are compared on linux/amd64 in CI. The finding named `log2` and `pow`
+    specifically — libm calls whose build, compiler and vectorisation differ across platforms. `[RUN]` on
+    DuckDB 1.5.5: **all five probe values are bit-identical across darwin/arm64 and linux/amd64,
+    `match_weight` (the `log2`) included.** A.4's exact-bit-equality default holds, and none of its
+    measured five orders of headroom is spent.
+
+    **The deliverable is a gate, not a measurement**, because a measurement decays and this one is scoped
+    to a pin. `harness/test_float_parity.py` asserts the committed reference on both platforms every run —
+    locally on arm64, in CI on native amd64 — so two platforms agree continuously rather than once. The
+    DuckDB version is asserted too, so a bump reopens the finding by failing instead of by being forgotten.
+    Shown to fail: flipping one bit of the reference fails the run naming the column.
+
+42. **Linear space and log space differ by 3 ULP, which is why D6/DR-06 exists.** The probe computes the
+    same seven-factor product both ways: `product(bf)` gives `413498e8ffffffff`, `exp(sum(ln(bf)))` gives
+    `413498e8fffffffc`. That is the effect A.4 addition 3 bounds at max |Δmw| = 2.842e-14 over all 2,880
+    gamma vectors, observed directly. It is pinned as a test because a later "optimisation" to log space
+    would look tidier, change every weight in the last few bits, and quietly break the exact-equality gate
+    every parity claim rests on.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
