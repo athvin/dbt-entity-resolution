@@ -3497,6 +3497,21 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     `4111111111111111` and still ignores a non-Luhn 16-digit run — both asserted. A heuristic that fires
     on its own repository is worse than none: it trains people to skip the output.
 
+51. **The reference fixture cannot exercise a precision regression, and the generator can.** `[RUN]`:
+    precision on `fake_1000` is **1.0000 at every threshold** — it contains no pair that the model scores
+    above the threshold and the ground truth denies. Every quality gate calibrated solely on it is
+    therefore blind to precision loss; only recall can move. The seeded generator measures 0.9798 and
+    0.9847 over two seeds, because its name pool is small enough that distinct personas resemble each
+    other. **A fixture that cannot fail in a given way cannot defend against it** — which is exactly
+    §12.7's argument about comparators, one level out. The two corpora are kept for different reasons and
+    the manifests should say which.
+
+52. **A gate shaped code that did not exist when it was written.** 3.55 blocklists consumer email
+    providers, so the generator emits **surname-derived domains** — `humphrey.com`, `smith.net` — rather
+    than the `gmail.com` a naive generator reaches for. Its test runs `check_pii_heuristics.check` itself
+    rather than re-stating the rules, so a change to the detectors changes the test with them. A generator
+    that tripped the repository's own PII scan would make the scan something people switch off.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`
