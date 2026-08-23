@@ -1,0 +1,31 @@
+---
+version: 2
+
+macros:
+  - name: er_assert_project_standards
+    description: >
+      The compile gate, run from `on-run-start`. Section 2 calls it the only gate
+      that travels with the package: dbt-bouncer reads artifacts from this
+      repository and therefore protects this repository only, while a consumer
+      installing `dbt_er` can override our model configs from their own
+      `dbt_project.yml`.
+
+
+      Walks `graph.nodes` and `graph.unit_tests`, which an `on-run-start` hook
+      sees fully populated because ManifestLoader calls `build_flat_graph()`
+      before any task executes. Checks the 1:1 properties-file rule (3.1), the
+      `er_` prefix (3.33), the governed tag vocabulary (3.42), the
+      materialization policy (3.11) and constraint enforcement (3.12), contracts
+      and primary keys (3.3, 3.6), the `_l`/`_r` column budget (3.53), the
+      run-contract/volatile-column pairing (3.48), the six-section description
+      and column documentation (3.5, 3.4), and unit-test coverage (3.20).
+
+
+      Aggregates every violation and raises **once**, sorted. A gate that
+      surfaces one problem per run trains people to stop running it.
+
+
+      Exemptions are per check, not per model: the v1 form short-circuited at the
+      top of the loop, which excused a model from every standard at once, and
+      section 18.1 condemns exactly that. Waivable checks consult the mapping;
+      3.12 does not, because it is never waivable.

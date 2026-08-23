@@ -3763,6 +3763,40 @@ being pushed straight to `main`. It had not landed yet. It has now.
 an empty set and **passed**. Both are fixed, and both have a failing-case test: one asserts a violation in
 the second root is found, the other asserts that walking an empty tree is a **finding rather than a pass**.
 
+#### Step 4b (the compile gate and `verify_gates.py`), same day
+
+`verify_gates.py` exists now -- Appendix D calls it *"the most valuable missing piece"* -- and running it
+produced more findings than any other step, because it is the first tool whose job is to disagree with the
+rest of the scaffold.
+
+16. **`dbt parse` does NOT execute `on-run-start` hooks**, so **the compile gate does not fire during
+    `dbt parse`** — despite §2 calling it the *compile* gate. C.7 carries a separate
+    `dbt run-operation er_assert_project_standards` step, and that is why. `make lint` now carries the same
+    step; without it, the only gate that travels with the package went unrun until `make build`.
+17. **`dbt deps` installs a `local:` package as a symlink to the *absolute* path of the source
+    repository.** A scratch copy therefore points back at the **live** repository, every injection has no
+    effect, and `verify_gates.py` reports that no gate fires while having tested nothing. **That failure is
+    silent and self-consistent** — which makes it precisely the class of defect 3.38 exists to expose, found
+    here in the tool built to expose it. The copy re-points the symlink.
+18. **dbt rejects every materialization our policy forbids *before* the policy macro sees it**, for a model
+    that is contracted and carries constraints — which every model here is:
+    `view` produces *"Constraint types are not supported for view materializations"*, a **warning** that
+    `error: all` turns into an error; `incremental` produces *"must set `on_schema_change` to
+    `append_new_columns` or `fail`"*. **3.11 is therefore shadowed in practice.** It is the backstop for the
+    case dbt does not catch — an uncontracted or constraint-free model — and not the first line of defence.
+    The `view` result is 3.13's claim demonstrated: 3.11 and 3.12 are not redundant, and **3.21 is
+    load-bearing rather than cosmetic**.
+19. **Three of the first fourteen injections were wrong, and the string assertion caught all three.** A
+    one-line edit inside a `description: >` folded block leaves the description long; renaming only a
+    model's `.sql` trips 3.1 before 3.33; a `view` materialization proves 3.21 rather than 3.11. Each
+    *failed* — and would have counted as a proven gate under a bare non-zero-exit check. This is the
+    concrete case for 3.38's *"and the expected error string"*, which v1's phrasing omitted.
+
+**Result: 14 standards have a registered injection and all 14 are shown to fire.** The other 57 rows of the
+§3 matrix do not, and `verify_gates.py` prints that number on every run so the gap is a figure rather than
+an impression. **Waiver B-1 does not expire yet** — it expires when the matrix is covered, not when the
+script exists.
+
 #### The standard finding 4 asks for
 
 > **3.72 — A `unit_tests:` block is at the top level of its properties file.** *Mechanism:*
@@ -3806,7 +3840,11 @@ literally means either one unreviewable PR or a silent exception. This is the ex
 > `scripts/verify_gates.py`. From that commit onward §23 applies unwaived, and a row without an injection
 > fails `verify-gates`.
 > **Scope:** the bootstrap sequence only, per §18's one-legal-way rule.
-> **Expires:** when `verify_gates.py` lands. **Echoed** by the policy macro on every run until it does.
+> **Expires:** when the §3 matrix is **covered by injections**, not when `verify_gates.py` lands. The
+> original wording said the latter, and executing it showed why that is the wrong trigger: the script
+> existed and 14 of 71 rows were covered, which is progress and is not the rule being satisfied.
+> `verify_gates.py` prints the covered count on every run, so the remaining gap is a figure rather than an
+> impression. **Echoed** by the policy macro on every run until it closes.
 
 That waiver is the reason the sequence is short. A longer bootstrap is a longer period in which nothing has
 been shown to fire.

@@ -43,7 +43,7 @@ UNAME_M := $(shell uname -m)
 IS_AMD64 := $(filter x86_64 amd64,$(UNAME_M))
 
 .PHONY: help install lint build docs bouncer ci capacity baseline \
-        clean platform-note python-tests precommit
+        clean platform-note python-tests precommit verify-gates
 
 help:
 	@echo "dbt-er targets (section 17 -- each is also a CI step)"
@@ -54,6 +54,7 @@ help:
 	@echo "  docs       catalog.json, for the bouncer catalog tier"
 	@echo "  bouncer    all three artifact tiers"
 	@echo "  python-tests  pytest over scripts/ and dbt_bouncer_checks/ (3.57)"
+	@echo "  verify-gates  prove each standard FAILS when violated (3.38)"
 	@echo "  precommit  every pre-commit hook, over all files"
 	@echo "  ci         everything CI runs, in CI's order"
 	@echo "  capacity   measured bytes/pair -> er_max_pairs (D11 rec 5)"
@@ -95,6 +96,12 @@ lint: platform-note
 	fi
 	$(DBT) parse
 	$(DBT) parse $(IT)
+	@# `dbt parse` does NOT execute on-run-start hooks, so it does not fire the
+	@# compile gate -- despite section 2 calling that gate "compile". C.7 carries
+	@# an explicit run-operation step for exactly this reason, and lint needs the
+	@# same one or the only gate that travels with the package goes unrun until
+	@# `make build`.
+	$(DBT) run-operation er_assert_project_standards $(IT)
 	@# Section 17 writes this as `sqlfluff lint models tests`, but sqlfluff
 	@# errors on a path that does not exist and `tests/` has no singular tests
 	@# yet. Named explicitly rather than mkdir'd into existence: an empty
@@ -136,6 +143,12 @@ repo-checks:
 # anything.
 python-tests:
 	uv run pytest tests_python -q
+
+# 3.38 / section 15's `verify-gates` job. Injects each violation in a scratch
+# copy and asserts a non-zero exit AND the expected error string. Section 0: a
+# standard that has never been observed to FAIL is not known to be enforced.
+verify-gates:
+	uv run python scripts/verify_gates.py
 
 precommit:
 	uv run pre-commit run --all-files
@@ -182,7 +195,7 @@ baseline:
 # arbitrary: `dbt docs generate` must precede the catalog checks because they
 # need a catalog built against a real database, and the parity harness must run
 # after dbt has EXITED because DuckDB takes a process-level lock.
-ci: lint python-tests build docs bouncer
+ci: lint python-tests verify-gates build docs bouncer
 
 clean:
 	$(DBT) clean || true

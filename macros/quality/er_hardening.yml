@@ -1,0 +1,24 @@
+---
+version: 2
+
+macros:
+  - name: er_hardening
+    description: >
+      The hardening values (section 2.1, C.1 delta 10, RC48). Returns the mapping
+      the compile gate reads for the policies a consumer must not be able to
+      relax: allowed materializations, the models that must carry physical
+      constraint enforcement, the per-check exemption mapping and its cap, the
+      governed tag vocabulary, the volatile and run-contract column sets, the
+      pair-grain model list, and nothing else.
+
+
+      These are deliberately NOT read from `var()`. Root configuration beats
+      package configuration in dbt, so a value the gate reads from a var can be
+      overridden by the consumer the gate exists to defend against -- and
+      `er_allowed_materializations: ["view"]` in a consumer's project would make
+      every DDL constraint here inert while their build stayed green, because dbt
+      only warns when a materialization cannot enforce constraints.
+
+
+      Changing anything here is a change to the package, reviewed as code. That
+      is the difference between a policy knob and a hardening value.

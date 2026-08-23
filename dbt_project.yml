@@ -180,8 +180,9 @@ models:
 # materialises 500 rows of person data into every consumer's warehouse (12.5,
 # 3.52).
 
-# NOTE: on-run-start is NOT here yet. It lands with
-# macros/quality/er_assert_project_standards.sql in step 4 of Appendix D.1's
-# bootstrap order. A hook pointing at a macro that does not exist fails parse;
-# a hook pointing at a macro that checks nothing is worse, because it looks
-# like a gate.
+# Travels WITH the package, so it also protects consumers -- whose root project
+# can override our model configs. This is the only gate that reaches their build
+# (section 2). Its hardening values live in er_hardening(), not in `vars:`,
+# precisely so that root configuration cannot reach them (section 2.1).
+on-run-start:
+  - "{{ dbt_er.er_assert_project_standards() }}"
