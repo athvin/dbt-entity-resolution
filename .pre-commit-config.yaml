@@ -132,6 +132,15 @@ repos:
         language: system
         pass_filenames: false
 
+      # The sibling of the hook above, one level out: that one stops a DOCUMENT
+      # holding a stale copy of a config file, this one stops the WORKFLOW
+      # holding a stale copy of a Make target (3.83, D.0 finding 69).
+      - id: er-ci-makefile-parity
+        name: "the CI workflow and the Makefile agree on what they look at"
+        entry: python scripts/check_ci_makefile_parity.py
+        language: system
+        pass_filenames: false
+
       - id: er-unit-test-fixtures
         name: "unit-test fixtures are format: sql with explicit casts"
         entry: python scripts/check_unit_test_fixtures.py
