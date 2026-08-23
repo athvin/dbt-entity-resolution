@@ -1532,6 +1532,22 @@ worth stating twice:
   `fixtures/degenerate/`, each with a manifest stating what it probes. **The seeded synthetic generator is
   still outstanding** and is what `er_max_pairs` (0.6) and the scale work will need.
 - 0.3 `gen_baseline.py` dumping every intermediate as parquet with a manifest.
+  **DONE 2026-08-23 (PC-4).** `scripts/gen_baseline.py` → `fixtures/baselines/fake_1000/`:
+  `predictions.parquet` (3,349 pairs, **37 columns**) and clusters at all three of Stage 6's thresholds,
+  each with a `kind: baseline` manifest 3.62 verifies. `[RUN]` on splink 4.0.16 confirms M14 exactly —
+  with both retain flags on the baseline carries `*_l`/`*_r`, `bf_*`, `bf_tf_adj_*` and `tf_*_l/r`;
+  **neither flag is a Splink default**, and without them gamma equality is the sole gate over a
+  self-consistent wrong numbering. `match_key` is **VARCHAR** in the artefact, which is §12.7's measured
+  fact asserted on the file rather than on Splink's source.
+
+  Two additions to §20.1's field list, both because a baseline is read by someone who was not there:
+  **`source_fixture_sha256`**, since the fixture is vendored and could drift, and
+  **`not_exercised_by_this_fixture`**, because `[RUN]` established that `cluster_id` has **zero** nulls
+  here — a `dedupe_only` run over one table cannot produce a dangling edge, so Splink's NULL-node
+  behaviour is simply not reached. *"Predictions baseline green"* must not be read as *"NULL handling
+  verified"*; the degenerate corpora cover that, and the manifest says so rather than leaving a reader to
+  assume. **G5 had to close first** for any of this to be usable: these were generated on darwin/arm64
+  and are compared on linux/amd64.
   **Normative: baselines are generated from a model JSON that has been saved and reloaded** (§3.4).
   The baseline format must carry, **from day one**, everything a later stage will need — retrofitting it
   after 0.4 freezes it is the expensive path:

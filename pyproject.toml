@@ -127,6 +127,11 @@ ignore = [
 # keyword-only, and collapsing them into a config object would hide the thing a
 # reviewer most needs to see: which gate is being applied to which columns.
 "harness/comparators.py" = ["S101", "PLR2004", "INP001", "D103", "PLR0913"]
+# ANN401 on gen_baseline.py. Splink 4 ships no type information, so every
+# annotation on a Linker, a SettingsCreator or a SplinkDataFrame would be
+# `Any` under a different name. Writing `Any` and saying why is more honest
+# than importing private types to satisfy a linter.
+"scripts/gen_baseline.py" = ["ANN401"]
 
 [tool.mypy]
 python_version = "3.12"
