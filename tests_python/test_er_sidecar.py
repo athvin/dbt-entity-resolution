@@ -399,3 +399,107 @@ def test_nothing_is_resolved_before_it_is_validated() -> None:
     """
     with pytest.raises(er_sidecar.ValidationError):
         er_sidecar.build(_model("random() > 0.5"))
+
+
+# ---------------------------------------------------------------------------
+# The Stage 1 lints: M1 (asymmetry), M2 (name collision), M13 (m/u).
+# ---------------------------------------------------------------------------
+
+
+def _levels(*levels: dict[str, object]) -> str:
+    return json.dumps(
+        {"comparisons": [{"output_column_name": "name", "comparison_levels": list(levels)}]}
+    )
+
+
+def test_m1_detects_a_columns_reversed_level() -> None:
+    """M1's measured example: ColumnsReversedLevel('forename','surname').
+
+    Renders `"forename_l" = "surname_r"`, and `symmetrical=False` is the DEFAULT.
+    On one pair the Splink orientation gives false and the flipped orientation
+    true -- same pair, opposite gamma -- which is what kills S2's "match the set,
+    not the orientation" escape.
+    """
+    artefact = er_sidecar.build(
+        _levels({"sql_condition": '"forename_l" = "surname_r"'}, {"sql_condition": "ELSE"})
+    )
+    assert any("ER-044" in f and "ASYMMETRIC" in f for f in artefact["asymmetric_levels"])
+
+
+def test_m1_detects_a_one_sided_literal_level() -> None:
+    """`LiteralMatchLevel(side_of_comparison='left')` renders `"city_l" = 'London'`."""
+    artefact = er_sidecar.build(
+        _levels({"sql_condition": "\"city_l\" = 'london'"}, {"sql_condition": "ELSE"})
+    )
+    assert artefact["asymmetric_levels"]
+
+
+def test_m1_does_not_fire_on_a_symmetric_level() -> None:
+    """Precision matters: an ordinary equality must not be reported."""
+    artefact = er_sidecar.build(
+        _levels({"sql_condition": '"name_l" = "name_r"'}, {"sql_condition": "ELSE"})
+    )
+    assert artefact["asymmetric_levels"] == []
+
+
+def test_m1_is_silent_on_the_frozen_dedupe_only_model() -> None:
+    """M1 is "dormant on dedupe-only configs with symmetric levels" -- confirmed."""
+    assert er_sidecar.build(FROZEN.read_text(encoding="utf-8"))["asymmetric_levels"] == []
+
+
+def test_m2_rejects_names_that_collide_after_normalisation() -> None:
+    """`first name` and `first_name` both emit `gamma_first_name`."""
+    raw = json.dumps(
+        {
+            "comparisons": [
+                {
+                    "output_column_name": "first name",
+                    "comparison_levels": [{"sql_condition": "ELSE"}],
+                },
+                {
+                    "output_column_name": "first_name",
+                    "comparison_levels": [{"sql_condition": "ELSE"}],
+                },
+            ]
+        }
+    )
+    assert "ER-040" in _codes(raw)
+
+
+def test_m13_a_present_zero_is_a_hard_error() -> None:
+    """A zero bayes factor makes the pair unscoreable and log2(0) is undefined."""
+    raw = _levels({"sql_condition": '"a_l" = "a_r"', "m_probability": 0}, {"sql_condition": "ELSE"})
+    assert "ER-042" in _codes(raw)
+
+
+def test_m13_an_absent_m_probability_is_valid_input() -> None:
+    """The distinction that IS the finding.
+
+    Splink's save guard `if self._m_probability and self._m_is_trained` drops
+    0.0 and not-observed alike, so a routine trained model legitimately omits
+    m_probability -- M13 measured 3 of 14 non-null levels missing it. Rejecting
+    absence would red the nightly job on an ordinary Splink artefact, and the
+    likely "fix" is weakening the validator.
+    """
+    assert er_sidecar.validate(
+        _levels({"sql_condition": '"a_l" = "a_r"'}, {"sql_condition": "ELSE"})
+    )
+
+
+def test_m13_one_point_zero_exactly_is_valid() -> None:
+    """A naive "probabilities in (0,1)" open-interval check rejects it.
+
+    M13 measured three levels at exactly 1.0 in a real production model.
+    """
+    raw = _levels(
+        {"sql_condition": '"a_l" = "a_r"', "m_probability": 1.0, "u_probability": 1.0},
+        {"sql_condition": "ELSE"},
+    )
+    assert er_sidecar.validate(raw)
+
+
+def test_m13_rejects_a_probability_outside_the_unit_interval() -> None:
+    raw = _levels(
+        {"sql_condition": '"a_l" = "a_r"', "u_probability": 1.5}, {"sql_condition": "ELSE"}
+    )
+    assert "ER-043" in _codes(raw)
