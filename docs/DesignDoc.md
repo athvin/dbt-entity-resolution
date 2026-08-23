@@ -222,6 +222,76 @@ permanence here would make `dbt-er` an MDM system by accretion.
 > the direction Q1 had already declared.
 > **Reversible:** reopen DR-12 in §B.3.
 
+### 1.7 Thresholds are a dimension, and there are two of them
+
+**Normative. Closes G15. Register rows: DR-08 (with companion B.2) and DR-09.**
+
+Two decisions that look separate and are one contract change to Stage 6, which is why they are settled
+together and before that stage is broken down.
+
+#### The threshold is a dimension of the model, not a build-time var
+
+`var('er_threshold')` builds **one partition per run**. Stage 6's acceptance criteria require label parity
+at **{0.5, 0.9, 0.99} simultaneously**, and cross-threshold monotonicity — that a component at a higher
+threshold is contained in one at a lower threshold — is **not expressible as a dbt test at all** under the
+var approach, because the two partitions never exist in the same build.
+
+M16 verified the alternative rather than proposing it. `[RECON]`: a single `USING KEY` model with a
+composite key produces all three partitions in one statement, and on 6 nodes / 3 edges yields
+`0.50 → {a-0},{a-1,a-2,a-3},{a-4,a-5}`; `0.90 → {a-0},{a-1,a-2,a-3},{a-4},{a-5}`;
+`0.99 → {a-0},{a-1,a-2},{a-3},{a-4},{a-5}` — a correct refinement chain.
+
+So: `edges_by_threshold` and `entity_clusters` carry `thr` as a real column, cross-joined from a
+`thresholds` relation. The baseline comparator joins on `thr`, and cross-threshold properties become plain
+singular tests.
+
+> **The trap, from the same `[RECON]`:** **cast the thresholds relation to `DOUBLE`.** DuckDB types a bare
+> decimal literal as `DECIMAL`, which changes the boundary comparison against `match_probability` — and a
+> boundary comparison is precisely what a threshold is. This belongs in the model, not in a reviewer's
+> memory.
+
+**`er_thresholds` defaults to a single row, so production cost is unchanged.** The dimension is what makes
+the *tests* possible; it does not oblige anyone to run three partitions in production.
+
+#### There are two thresholds, and the band between them is not clustered
+
+The `thresholds` relation is a relation of **pairs**:
+
+| Column | Meaning |
+|---|---|
+| `thr_auto_merge` | Pairs at or above this are edges. This is "the threshold" everywhere else in the document |
+| `thr_review_low` | Pairs in `[thr_review_low, thr_auto_merge)` are **gray**: emitted for review, never clustered |
+
+`edges_by_threshold` contains pairs with `match_probability >= thr_auto_merge`. Gray pairs go to a
+**`review_pairs`** relation, keyed `(thr, unique_id_l, unique_id_r)`, which the platform consumes. They
+never enter the graph, so they change no partition and no Stage 6 acceptance criterion.
+
+This matches the incumbent's contract exactly — A.3 Group 1: *"half-open `review_low ≤ p < auto_merge`;
+gray-band pairs are **not** clustered"* — which is what DR-14's posture requires, since the platform on the
+other side of that boundary already expects these semantics.
+
+**`thr_review_low` defaults to `thr_auto_merge`, making the band empty.** A single threshold is the
+degenerate case of two, so nothing changes for a caller who wants one.
+
+**This costs no parity, and that is worth stating because it looks like it should.** Splink clusters at one
+threshold: pairs below it are excluded. Gray pairs are *below* `thr_auto_merge` by definition, so Splink
+excludes them from clustering too. The edge set fed to clustering is **identical** either way. `review_pairs`
+is purely additive — it surfaces rows Splink computes and discards, and A.4's cluster gate is unaffected.
+
+**Why decide it now rather than at Stage 6.** G15's failure scenario is that Stage 6 gets built and gated
+against one threshold, and the gray band arrives during Stage 12 integration as an interface requirement —
+*"and it is not a var change; it changes the clustering input, the cluster contract, and every AC that
+references a partition."* M12 rec 5 is blunter: *"a single threshold cannot express 'uncertain'."*
+
+The review **queue** stays out of scope per §1.3. The two-threshold contract and the `review_pairs` relation
+are the engine's to provide; what anyone does with them is the platform's.
+
+> **Decided under delegated authority 2026-08-23.**
+> **Recommendation source:** `DbtBestPractices.md` B.2 (*"the dimension"*) and G15's recommendation, both
+> adopted in full; M12 rec 5 and M16 supply the evidence. The pairing of the two thresholds into one
+> `thresholds` relation is this document's, and follows from adopting both.
+> **Reversible:** reopen DR-08, DR-09 and B.2.
+
 ---
 
 ## 2. What Splink does, as data transformations
@@ -318,7 +388,8 @@ v1's table had 7 rows and covered only the inference path. The complete non-char
 | `deterministic_link` | `int_deterministic_links` | Easy | Blocking with no scoring. |
 | `compare_two_records` | `compare_two_records` (macro) | Easy | The "explain this pair" primitive. |
 | `find_matches_to_new_records` | folded into incremental | Easy | See §5 Stage 8 — SQL removes the two-pass wart. |
-| `cluster_pairwise_predictions_at_threshold` | `entity_clusters` | **Solved — see D4** | |
+| `cluster_pairwise_predictions_at_threshold` | `entity_clusters` | **Solved — see D4** | Composite key `(thr, unique_id, component_label)` — §1.6, §1.7 |
+| *(no Splink surface)* | `review_pairs` | Trivial | The half-open gray band `[thr_review_low, thr_auto_merge)`, emitted for the platform and never clustered. An **addition**, not a divergence — §1.7 |
 | `cluster_using_single_best_links` / `one_to_one_clustering` | `entity_clusters_1to1` | Moderate | Mutual-best-link with a duplicate-free constraint. **Absent from v1 entirely.** |
 | `compute_graph_metrics` (node/cluster) | `cluster_metrics`, `node_metrics` | Easy | Pure aggregates. Formulas in §3.6. |
 | `edge_metrics` (`is_bridge`) | `edge_metrics` | Moderate | Not a reproduction — see S3. |
@@ -1567,8 +1638,8 @@ repeated expression all at once. One of the three must give.
 
 ### Stage 6 — Clustering · parallelisable from day one
 
-`edges_by_threshold` (threshold, **`>=`** — §3.1 note / D2); `entity_clusters` (D4);
-`node_metrics` / `cluster_metrics` / `edge_metrics` (§3.6).
+`edges_by_threshold` (threshold, **`>=`** — §3.1 note / D2); `entity_clusters` (D4); **`review_pairs`**
+(§1.7's gray band); `node_metrics` / `cluster_metrics` / `edge_metrics` (§3.6).
 
 **On the two model names.** `int_edges` becomes `edges_by_threshold` and `entity_clusters` takes the
 composite key `(thr, unique_id, component_label)` — the label column is `component_label`, not `entity_id`
@@ -1606,8 +1677,11 @@ unmarked in the v1 plan; **G18's dead-code catalogue gains this row**, which it 
 - **Max-cluster-size gates** (M12). Cluster precision amplifies edge error: 0.9764 at the edge level
   became 0.7495 at the cluster level on the fixture, a 14.8× amplification of false positives.
 
-**Blocked by DR-09 / G15** — whether there is one threshold or a gray band decides whether gray-band pairs
-enter the graph at all, which changes every acceptance criterion above. And by **DR-08 / B.2**, above.
+**DR-09 and DR-08 are closed** (§1.7), and both land in this stage's models rather than blocking it.
+`edges_by_threshold` takes pairs with `match_probability >= thr_auto_merge`; the half-open band
+`[thr_review_low, thr_auto_merge)` goes to **`review_pairs`** and never enters the graph, so no acceptance
+criterion above changes. `thresholds` is cast **DOUBLE** — a bare decimal literal types as `DECIMAL` in
+DuckDB and shifts the boundary comparison, which is the one thing a threshold must not do.
 
 ### Stage 6b — Entity identity · **not built; an interface contract** (DR-12)
 
@@ -3384,7 +3458,13 @@ forbidding the row count. *(D1 now carries the clause.)*
 
 ---
 
-### G15 — The gray band is recommended twice and never reaches the model layer
+### G15 — The gray band is recommended twice and never reaches the model layer · **CLOSED 2026-08-23**
+
+> **Closed by §1.7** (DR-09), which adopts this finding's recommendation in full: two thresholds, the
+> half-open band, gray pairs excluded from the edge relation, and a `review_pairs` output the platform
+> consumes. All three structural questions are answered — `thr_auto_merge` feeds the edges, gray pairs are
+> excluded from the graph, and they are emitted to `review_pairs` keyed by `thr`. M16's dimension is
+> settled in the same section (DR-08), which is what this finding says compounds it.
 
 **Severity:** MAJOR · **Attacks:** M12 rec 5, A.3 Group 1, D4, Stage 6, M16 · **Scope:** `[interface]`
 
@@ -3651,8 +3731,8 @@ force), **SUPERSEDED** (with the pointer), **OPEN** (needs an answer), **CONFLIC
 | DR-05 | Clustering performance path | OPEN (scheduled) | Recursive CTE for parity; D4b after Stage 6 | §A.6 Q3 |
 | DR-06 | Scoring arithmetic space | CURRENT | Linear product, single `log2`, Splink clamp (§3.1) | Supersedes v1's log-space sum |
 | DR-07 | Threshold predicate | CURRENT | `match_probability >= t` on the materialised column (§6.1 / B2) | — |
-| DR-08 | Threshold as var or dimension | OPEN | — | M16; `DbtBestPractices.md` Appendix B.2 recommends the dimension |
-| DR-09 | One threshold or a gray band | **OPEN — blocks Stage 6** | — | M12 rec 5, A.3 Group 1; **G15** |
+| DR-08 | Threshold as var or dimension | **CURRENT (2026-08-23)** | **The dimension** (§1.7). `edges_by_threshold` and `entity_clusters` carry `thr` as a real column from a `thresholds` relation, cast **DOUBLE**; `er_thresholds` defaults to one row so production cost is unchanged | Closes `DbtBestPractices.md` **B.2**. M16's `[RECON]` verified the composite-key form and its refinement chain. Cross-threshold monotonicity is not expressible as a dbt test under the var approach. **Delegated authority** |
+| DR-09 | One threshold or a gray band | **CURRENT (2026-08-23)** | **A gray band** (§1.7). `thresholds` is a relation of `(thr_auto_merge, thr_review_low)` pairs; `[thr_review_low, thr_auto_merge)` is gray, emitted to `review_pairs` and **never clustered**; `thr_review_low` defaults to `thr_auto_merge`, making the band empty | Closes **G15**. Matches the incumbent's half-open contract (A.3 Group 1) as DR-14's posture requires. **Costs no parity** — gray pairs are below the threshold, so Splink excludes them from clustering too; `review_pairs` is purely additive. **Delegated authority** |
 | DR-10 | Tolerance policy | CURRENT, split across two tables | A.4's table | **R2** |
 | DR-11 | Stage inventory | **CURRENT (2026-08-23)** | **§5 is the single inventory.** A.5 absorbed into it and retained as evidence; A.5 is stale where the two disagree | Closes **R3**, executed from RC29's enumeration. Supersedes A.5-as-inventory, §5 Stage 4's "every distinct threshold constant" AC, §5 Stage 9's EM AC, and the single-boolean stage-decoupling mechanism. Adds Stages 2b, 6b, 12b, sub-stages 0.0/0.6/0.7/0.8/0.9, and the critical path. **Delegated authority** — see the F13 note at §5 |
 | DR-12 | `entity_id` vs `component_label` | **CURRENT (2026-08-23)** | **`component_label`** (§1.6). Deterministic for a fixed graph and threshold; **not** stable across runs; removed as a key from every downstream model. Stage 6b collapses to an interface contract — the engine publishes the edge set and the partition, the platform owns permanence | Closes **M6**, whose `[RECON]` measured one insert relabelling 5/5 pre-existing records. Its trigger fired 2026-08-20 when DR-14 went CURRENT; §A.6 Q1 had already declared this binding (RC16). **Delegated authority** |
