@@ -1,0 +1,35 @@
+---
+version: 2
+
+macros:
+  - name: er_gamma_case_sql
+    description: >
+      Section 3.3's gamma CASE, emitted in EXACT JSON list order with no
+      reordering and no null-hoisting (`Comparison._case_statement`).
+
+
+      v1 said levels are "evaluated highest-to-lowest". They are not. The
+      ordering only looks descending because Splink's own creators write them
+      that way -- sorting them would be a silent behaviour change on any model
+      that does not.
+
+
+      The ELSE level is identified by its `sql_condition` sentinel, NOT by
+      `comparison_vector_value == 0`; section 3.2 makes the same point about
+      the TF adjustment. `comparison_vector_value` comes from the A.2 sidecar,
+      resolved by Splink, never inferred from list position.
+
+
+      Verified token-identical to Splink's own output (3.80).
+
+    arguments:
+      - name: output_column_name
+        type: string
+        description: The comparison's name; the emitted column is `gamma_<name>`.
+      - name: levels
+        type: list
+        description: >
+          Levels in JSON order, each carrying `sql_condition` and the sidecar's
+          `comparison_vector_value`. No levels raises `ER-052`; no ELSE level
+          raises `ER-053`, because an unmatched pair would produce a NULL gamma
+          that propagates silently into a NULL match_weight.

@@ -346,6 +346,26 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.80",
+        what="use LEAST instead of GREATEST for the term-frequency divisor",
+        mutate="noop",
+        command=("pytest", "tests_python/test_gamma_and_tf_sql.py", "-q", "--no-header"),
+        expect="assert",
+        edits=(
+            (
+                "macros/sql_gen/er_tf_divisor_sql.sql",
+                (
+                    "        when coalesce({{ tf_left }}, {{ tf_right }}) >= "
+                    "coalesce({{ tf_right }}, {{ tf_left }})"
+                ),
+                (
+                    "        when coalesce({{ tf_left }}, {{ tf_right }}) <= "
+                    "coalesce({{ tf_right }}, {{ tf_left }})"
+                ),
+            ),
+        ),
+    ),
+    Injection(
         standard="3.79",
         what="drop the clamp from the scoring product",
         mutate="noop",

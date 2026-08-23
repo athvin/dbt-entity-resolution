@@ -293,6 +293,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 
 | | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.75 | The model JSON passes the §1.5 trust boundary before anything builds | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact | P + CI | Non-zero exit naming the level and the function |
+| 3.80 | The gamma CASE and TF adjustment are bit-identical to Splink's | `tests_python/test_gamma_and_tf_sql.py` executes both against Splink's captured SQL over 1,507 rows covering every NULL combination | CI | Test fails naming the divergent row |
 | 3.79 | Scoring arithmetic is bit-identical to Splink's, executed rather than compared as text | `tests_python/test_match_weight_sql.py` runs both forms over 2,005 rows including the clamp boundaries and an infinity | CI | Test fails naming the first divergent row |
 | 3.78 | Generated SQL matches Splink's own, not a transcription of the prose | `tests_python/test_blocking_sql.py` renders the macro and compares against `fixtures/snapshots/*.sql`, captured from Splink's generator | CI | Test fails showing the first divergent token |
 | 3.77 | Stage-1 model-JSON lints: asymmetric levels reported (M1), `output_column_name` unique after `.replace(" ", "_")` (M2), a **present** `m`/`u` of 0 is a hard error while an **absent** one is valid input (M13) | `scripts/er_sidecar.py` -- the same pass that validates and resolves | P + CI | Non-zero exit naming the comparison and the level |
@@ -3616,6 +3617,14 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     failing test for the wrong reason. **Asserting the property beats transcribing the number**: any
     product below `1e-300` scores at the floor, which is precisely what a log-space sum fails to do as it
     continues to −1006.54.
+
+64. **I skipped a gate and CI caught it — which is the system working, and a claim I should not have
+    made.** PD-1f ran pre-commit, pytest, mypy, `verify_gates` and `make build`, but **not `make
+    bouncer`**, and the PR body said all gates were green. dbt-bouncer then failed on
+    `check_macro_name_matches_file_name`: I had put `er_tf_divisor_sql` inside
+    `er_tf_adjustment_sql.sql`, violating 3.33. **`make ci` exists precisely so the local set is not a
+    subset chosen by hand**, and running the targets individually is how the subset drifts. The rule was
+    right, the mechanism worked, and the reporting was the part that failed.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both

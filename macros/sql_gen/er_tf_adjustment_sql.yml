@@ -1,0 +1,46 @@
+---
+version: 2
+
+macros:
+  - name: er_tf_adjustment_sql
+    description: >
+      Section 3.2's `bf_tf_adj_<name>`: a SEPARATE MULTIPLICATIVE column, a CASE
+      covering every gamma value, with non-adjusted levels emitting
+      `cast(1 as float8)`.
+
+
+      v1 described a "`log2(tf_adjustment)` term with `tf_adjustment_weight`",
+      which is not the shape at all.
+
+
+      The numerator is the EXACT-MATCH level's `u`, not the level's own -- a
+      value that is NOT IN THE MODEL JSON. Splink resolves it by sqlglot CNF
+      analysis of sibling levels; this macro takes it from the A.2 sidecar,
+      which resolves it with Splink's own code.
+
+
+      A level emits the constant 1.0 when it is the null level, has no TF
+      column, has weight 0, or IS THE ELSE LEVEL -- detected by the sentinel,
+      not by `gamma == 0`. The NULL guard is
+      `coalesce(tf_l, tf_r) IS NOT NULL`, so the fallback applies only when
+      BOTH sides are NULL; with exactly one NULL the other is substituted and
+      the adjustment IS applied.
+
+
+      Verified bit-identical to Splink's own SQL over 1,507 rows including every
+      NULL combination (3.80).
+
+    arguments:
+      - name: output_column_name
+        type: string
+        description: The comparison's name; the emitted column is `bf_tf_adj_<name>`.
+      - name: levels
+        type: list
+        description: >
+          Levels in JSON order, merged with the sidecar's resolution
+          (`comparison_vector_value`, `is_null_level`, `tf_u_exact_match`).
+      - name: tf_column
+        type: string
+        description: >
+          The term-frequency column's base name, when it differs from the
+          comparison's name. Defaults to `output_column_name`.
