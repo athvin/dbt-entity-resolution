@@ -293,6 +293,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 
 | | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.75 | The model JSON passes the §1.5 trust boundary before anything builds | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact | P + CI | Non-zero exit naming the level and the function |
+| 3.86 | Once the package declares a scored column, the quality floors measure the PACKAGE and not the oracle (§1.8, M12) | `scripts/check_floor_subject.py` -- keyed on a `match_probability` column DECLARATION and on whether the measurement reads a committed file, so neither renaming a model nor renaming the baseline directory disarms it | CI (`make repo-checks`, inside `make lint`) | `ER-086` naming the declaring model |
 | 3.84 | Every committed baseline regenerates byte-identically from the frozen model (§20.1, A.4's "canonical ordering", D.0 finding 71) | `scripts/check_baselines_reproducible.py` -- regenerates into a temp dir and compares `sha256`; `gen_baseline.py` canonicalises column and row order | CI | Check fails naming the artefact and both hashes |
 | 3.83 | The CI workflow and the Makefile agree on which project and which paths their shared commands look at (§17, D.0 finding 69) | `scripts/check_ci_makefile_parity.py` -- compares `--project-dir` and target paths for every drift-prone command present in both | pre-commit + CI | Check fails naming the command and both sides' targets |
 | 3.82 | Term frequencies sum to exactly 1.0 per column (§3.5's non-null denominator) | `tests_python/test_term_frequency_sql.py`, executed against the real fixture | CI | Test fails naming the column and the shortfall |
@@ -3742,6 +3743,100 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     the config already reserved `^er_(int_|tf_|…)` for `models/intermediate/`, and the model carried a
     `primary_key` **constraint** but no uniqueness **test** — different claims, since dbt-duckdb does not
     enforce the constraint on a table, so the grain was documented and unheld.
+
+74. **I reported a missing gate that already existed, because I grepped four files and not the fifth.**
+    The claim was that §1.8's quality floors were committed, `scripts/measure_quality.py` computed them,
+    and *"nothing connected them"* — G14's *"a Makefile target reports; it does not stop a build"*. The
+    first two halves are true and the conclusion is **false**. `harness/test_quality_floors.py` has
+    enforced those floors since PR #28, is run by `pytest harness` in **both** `Makefile:174` and
+    `.github/workflows/ci.yml:166`, and already carries a **tighter** anti-vacuity guard than the one I
+    then wrote — `0 < measured - floor <= 0.05` against my 0.10. It also already blocks the exact mutation
+    I registered as the new standard's failing case.
+
+    The search was `Makefile`, `.pre-commit-config.yaml`, `.github/workflows/ci.yml` and
+    `scripts/verify_gates.py` for the string `measure_quality`. The enforcement lives in `harness/`, which
+    those four files reach only through `pytest harness -q` — so the grep was answering *"is this script
+    invoked by name?"* while I read the answer as *"is this property enforced?"*. Two different questions
+    with the same shape of evidence.
+
+    **What I nearly shipped is the more useful part.** A second floor gate, strictly weaker than the one
+    already on main, whose docstring asserted at length that the product *"could have shipped at any
+    quality whatsoever with every gate green"* — a false history, committed to the design document and the
+    loop state, justifying a duplicate of the thing it claimed was absent. That is finding 69 (two copies
+    of one logic, drifting) with a fabricated motive attached. Caught by an adversarial review that
+    checked whether the gap was real before accepting the fix for it. The duplicate was deleted; the three
+    assertions in it that were genuinely new — a band-WIDTH cap, a cluster-cap slack limit, and symmetric
+    threshold coverage — were added to `harness/test_quality_floors.py`, which already owned the job.
+
+75. **Two of §1.8's own numbers disagree with the fixture, and its text contains the reason.** §1.8 cites
+    *"1,651 of 2,975 true pairs found"*, while vendored `fake_1000` has **2,031** true pairs over 1,000
+    records — a different denominator, so no figure derived from it is comparable. The discriminating
+    measurement is that **M12's `0.5057` reproduces exactly** (`block_on(first_name) + block_on(surname)`,
+    matching §5's *"blocking recall = 0.51"*), while the same method on the four-rule model M12 says
+    reaches 0.9173 gives **0.8124**, and adding `block_on(city)` reaches only 0.8789. Same method, same
+    fixture, same denominator: the method is sound and the target is stale. This mattered because the
+    committed floors — correctly derived per DR-22 from *the model that ships* — read ~0.10 low against
+    §1.8's prose, inviting precisely the wrong repair.
+
+76. **The tripwire built to catch a silent failure could not fire, for the same reason it was catching.**
+    `check_floor_subject.py` (3.86) asks whether the quality floors still measure the oracle after the
+    package starts producing scores. Its first version grepped `measure_quality.py` for the literal string
+    `"fixtures/baselines"` — which that file spells `ROOT / "fixtures" / "baselines"`, as separate path
+    components. The substring never matched, so the check exited 0 under every possible input. It reported
+    `1 scored-model declaration(s)` and passed anyway. Only the deliberately-failing case caught it; the
+    happy path was green throughout. The fix resolves the module's own constant rather than pattern-matching
+    its source, because a resolved constant cannot drift from what the module does — it **is** what the
+    module does.
+
+77. **Splink's accuracy oracle defaults to a quantised sweep, and freezing that default would have
+    manufactured a parity failure.** `accuracy_analysis_from_labels_column` takes
+    `match_weight_round_to_nearest=0.1` by default, so its rows are confusion matrices at rounded **match
+    weights**, not at requested probabilities. Measured at t = 0.5: the default gives `tp=1433 fp=3
+    f1=0.826651`, while `match_weight_round_to_nearest=None` gives `tp=1431 fp=0 f1=0.826690` — which
+    reproduces this project's own measurement **exactly**, at all three thresholds (1431/1276/985,
+    0.826690/0.771696/0.653183). The `fp=3` is an artefact of the boundary sitting below the requested
+    threshold. Frozen at the default, Stage 10's acceptance criterion would have tripped over ~2 pairs and
+    ~0.0014 F1, and the natural response to a small unexplained divergence is to widen a tolerance — §21's
+    failure mode, reached by way of the oracle's plotting default. Two further details the baseline now
+    carries rather than discovering late: `truth_threshold` is a match weight, and `tn` counts the **full**
+    comparison space (495,130), not the generated pairs.
+
+78. **The duplicate floor gate counted its comparisons and called that coverage.** It reported
+    `7 quality floor assertion(s) checked.` against floors zeroed to a recall band of `[0.0, 1.0]`,
+    F1 floors of `0.0` and a max cluster size of `100000` — **exit 0**, with a measurement of
+    `blocking_recall = 0.0001` and `f1 = 0.0` injected. `MIN_ASSERTIONS` counted *how many* comparisons
+    ran and never *whether any could fail*, so §21's move — lower the number until the build is green —
+    was fully available under a check whose output said "checked". Two further arms: deleting two of the
+    three committed F1 floors passed silently at exactly the threshold, and because `_cluster_errors`
+    iterated the MEASUREMENT's keys rather than the floors', the assertion count could be **padded by a
+    different sub-check** than the one that went missing (22 "assertions", two F1 thresholds at 0.0, exit
+    0). Fixed by judging floors against the measurement in both directions — the shape M12 rec 2 already
+    required of blocking recall. **The gate itself was then deleted** (finding 74): it duplicated
+    `harness/test_quality_floors.py`, which was already stricter. What survived is the three assertions
+    that file genuinely lacked — a band-WIDTH cap (membership alone cannot see that `[0.0, 1.0]` asserts
+    nothing), a cluster-cap slack limit, and **symmetric** threshold coverage, since its vacuity guard
+    reads a hard-coded `("0.5", "0.9", "0.99")` and a fourth measured threshold would go unjudged.
+
+79. **The tripwire's second half repeated the mistake its first half had just fixed.** Finding 76 replaced
+    a literal path grep with a resolved constant — for the *model* half. The *oracle* half was then keyed
+    on the literal directory name `"baselines"`, and renaming `fixtures/baselines/` to `fixtures/frozen/`
+    silently disarmed the whole check while the same scored model sat there declared. Five further shapes
+    of a realistic Stage 5 also escaped it: columns declared under `versions:` (which is exactly what a
+    scored model acquires when it gets a v2), a `.yaml` extension, a swallowed `YAMLError`, an absent
+    `models/` directory reporting success — and a non-mapping top-level YAML **raised `AttributeError`**
+    rather than erroring cleanly. The oracle half now asks whether the measurement reads a committed file
+    in this repository at all, which no rename can defeat.
+
+80. **"Every way of building them sooner measures Splink's output" was false for one of the five.**
+    `er_diag_comparison_vector_distribution` needs **no score**: Splink's generator
+    (`comparison_vector_distribution.py:11-28`) reads only the gamma columns and `count(*)`. The package
+    already computes gammas — `er_blocking_sql` and `er_gamma_case_sql` ship and are verified — so the
+    model builds from `er_stg_input` with no baseline and no Splink in the run, and reproduces Splink's
+    own distribution **row for row**: 645 groups, 3,989 pairs accounted, **0 gamma disagreements**. The
+    claim was categorical where the evidence was per-model, and only an adversarial review that *actually
+    built the thing* caught it. The correction is recorded at §5 Stage 10; the model itself is deliberately
+    deferred rather than rushed, because building it today means inlining Stage 3 blocking and Stage 4
+    gamma logic into a **diagnostic**, which then has to be re-pointed when those stages land.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both

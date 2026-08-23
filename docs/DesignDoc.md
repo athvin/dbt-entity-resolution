@@ -324,6 +324,28 @@ measurement of the model that actually ships. What is fixed now is the rule:
 target rather than a blank page: recall ≥ 0.9173 and F1 ≥ 0.9809 on `fake_1000`, both achieved by adding
 `block_on(dob)` and `block_on(email)`.
 
+> **[CORRECTION 2026-08-23] M12's target numbers are not reproducible against the fixture this project
+> ships, and its own text says why.** §1.8 above cites *"1,651 of 2,975 true pairs found"* — but
+> `fake_1000` as vendored contains **2,031** true pairs, computed from its `cluster` column over 1,000
+> records. Different denominator, so none of M12's derived figures is comparable to anything measurable
+> here.
+>
+> This is not a wholesale rejection of M12, and the measurement says so precisely. **M12's `0.5057`
+> reproduces exactly** — `block_on(first_name) + block_on(surname)` gives blocking recall 0.5057 on the
+> shipped fixture, matching §5's *"blocking recall = 0.51"*. The same method, same fixture and same
+> denominator then give **0.8124** for the four-rule model M12 says reaches 0.9173, and adding
+> `block_on(city)` reaches only 0.8789. So the method is sound and one of the two numbers is not.
+>
+> **The committed floors are therefore correct and M12's target is the stale figure.** DR-22's rule is that
+> floors *"come from a measurement of the model that actually ships"*, and `dbt_project.yml`'s values
+> (recall band 0.78–0.84, F1 0.80/0.75/0.63) were derived that way. Read against M12's target they look
+> ~0.10 too low, which invites exactly the wrong repair: raising them to an unmeetable number, watching CI
+> go red, and lowering them again with less confidence than before.
+>
+> Enforced by `harness/test_quality_floors.py`, which `pytest harness` runs in both `make ci` and CI. An
+> earlier draft of this correction claimed that gate did not exist and proposed a second one; it does
+> exist, it is stricter, and the duplicate was deleted (D.0 finding 74).
+
 #### (b) `er_threshold` has no defensible default, so the package requires it
 
 **There is no package-level default threshold.** An unset `thr_auto_merge` fails compilation, exactly as an
@@ -1951,6 +1973,33 @@ freezes the baseline format is the expensive path.
 building them early is what lets their outputs gate **Stage 3's blocking-recall floor** and **Stage 6's
 quality tests**. A quality stage that runs after the stages it should gate cannot gate them (M12). Only the
 *parity* acceptance criterion stays at this position in the sequence.
+
+> **[CORRECTION 2026-08-23] "They need only labels and scores" is true, and the package has no scores.**
+> Nothing in `models/` computes a gamma, a Bayes factor, a match weight or a `match_probability` until
+> **Stage 5**. The five measurement models are therefore not beside the critical path — they are behind it,
+> and *"build immediately after Stage 2"* cannot be followed as written.
+>
+> **Four of the five** can only be built by measuring the frozen `predictions.parquet`, which is
+> **Splink's** output. A green `er_eval_accuracy` would then read as *"the product clears the floor"* while
+> meaning *"the oracle does"* — this repository's recurring inert-config defect (D.0 67, 70, 71, 73), with
+> the aggravation of sitting in the DAG looking like a pipeline measurement.
+>
+> **`er_diag_comparison_vector_distribution` is the exception, and an earlier draft of this correction
+> wrongly swept it in.** Splink's generator
+> (`splink/internals/comparison_vector_distribution.py:11-28`) reads **no** `bf_`, no `match_weight` and no
+> `match_probability` — only the gamma columns and `count(*)`. The package can already compute gammas:
+> `er_blocking_sql` and `er_gamma_case_sql` ship and are verified bit-identical. Built that way over
+> `er_stg_input`, with no baseline and no Splink in the run, it reproduces Splink's own distribution
+> **row for row** — 645 groups, 3,989 pairs accounted, **0 gamma disagreements** (D.0 finding 80).
+>
+> So the blocker is per-model and not categorical, and the correct statement is narrower: the *scored*
+> measurements wait for Stage 5; the *comparison-vector* diagnostic does not.
+>
+> **What the intent actually requires is that the floors gate, not that the models exist**, and that is
+> separable, and already done: `harness/test_quality_floors.py` blocks on the floors, measuring the oracle
+> — honestly, because for the scored metrics the oracle is all there is. **3.86** then fires the moment any
+> model declares a `match_probability` column, which is the day those floors must be re-pointed at the
+> package's own output. The models themselves land with Stage 5.
 
 **AC:** confusion-matrix parity against `accuracy_analysis_from_labels_table` on a labelled fixture. This
 is the first stage that measures whether the *output is good*, not merely whether it matches Splink.

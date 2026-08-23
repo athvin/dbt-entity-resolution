@@ -110,6 +110,12 @@ jobs:
       # mechanism it names is the thing that runs (D.0 finding 71).
       - name: "baselines regenerate byte-identically (3.84)"
         run: uv run python scripts/check_baselines_reproducible.py
+      # 3.86's own step rather than a pre-commit hook: it imports
+      # measure_quality, whose module-level constants resolve baseline paths.
+      # The FLOORS themselves are enforced by harness/test_quality_floors.py,
+      # which `pytest harness` already runs -- one home, not two (D.0 finding 78).
+      - name: "the floors measure the package once it has scores (3.86)"
+        run: uv run python scripts/check_floor_subject.py
       # Delta 5: a toolchain vulnerability scan. `uv sync --locked` guarantees
       # reproducibility, not that what is reproduced is safe.
       - name: toolchain vulnerability scan

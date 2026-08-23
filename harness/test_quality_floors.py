@@ -133,3 +133,68 @@ def test_the_floors_are_below_measurement_but_not_vacuously_so(
             f"{measured}: a gap of {measured - floor:.4f}. Too wide and it never "
             f"fires; at or above and it fires on nothing."
         )
+
+
+# ---------------------------------------------------------------------------
+# Added 2026-08-23 after an adversarial review of PR #42 found three ways to
+# make these floors vacuous that the tests above do not reach (D.0 finding 78).
+# They live HERE, beside the gate that already owns this job, rather than in a
+# second script -- two copies of one logic is finding 69, and a duplicate that
+# is strictly weaker than the original is worse than no duplicate at all.
+# ---------------------------------------------------------------------------
+
+# A two-sided band is made vacuous by WIDENING, not by lowering, and membership
+# alone cannot see that: [0.0, 1.0] contains every possible measurement while
+# still looking like a committed band.
+MAX_BAND_WIDTH = 0.12
+
+# Cluster size is an integer count and the committed value is supposed to BE the
+# fixture's true maximum, so slack here is slack against an over-merge.
+MAX_SIZE_SLACK = 1
+
+
+def test_the_recall_band_is_narrow_enough_to_fail(floors: dict[str, Any]) -> None:
+    """Membership is not enough: `[0.0, 1.0]` passes it and asserts nothing."""
+    band = floors["er_blocking_recall_floor"][FIXTURE]
+    width = band["max"] - band["min"]
+    assert width <= MAX_BAND_WIDTH, (
+        f"the blocking-recall band spans {width:.4f} "
+        f"({band['min']}-{band['max']}), wider than {MAX_BAND_WIDTH}. A band that "
+        f"wide admits everything -- it is a decoration, not a gate."
+    )
+
+
+def test_the_cluster_cap_is_not_slack_against_an_over_merge(
+    floors: dict[str, Any],
+) -> None:
+    """M12 rec 3: the committed value IS the fixture's true maximum.
+
+    Raising it is the cheapest possible way to let an over-merge through, and
+    cluster-level error amplifies -- measured edge precision 0.9764 against
+    CLUSTER precision 0.7495, 14.8x.
+    """
+    limit = floors["er_max_cluster_size"][FIXTURE]
+    measured = max(max_cluster_size().values())
+    assert limit <= measured + MAX_SIZE_SLACK, (
+        f"er_max_cluster_size is {limit} against a measured maximum of "
+        f"{measured}. Every unit of slack is a merge this gate will not catch."
+    )
+
+
+def test_every_measured_threshold_has_a_committed_floor(
+    floors: dict[str, Any],
+) -> None:
+    """Coverage must be SYMMETRIC, and the tests above only check one direction.
+
+    They read a hard-coded ("0.5", "0.9", "0.99"). A fourth threshold added to
+    the measurement would be reported and never judged -- and deleting a floor
+    is the cheapest way to stop a gate failing, because it leaves the
+    measurement in place so the output still looks complete.
+    """
+    committed = {str(k) for k in floors["er_f1_floor"][FIXTURE]}
+    measured = {str(k) for k in measure()["by_threshold"]}
+    assert measured <= committed, (
+        f"threshold(s) {sorted(measured - committed)} are measured but have no "
+        f"committed F1 floor. Measured and never judged is indistinguishable "
+        f"from passing."
+    )

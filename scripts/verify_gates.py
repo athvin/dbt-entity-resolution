@@ -366,6 +366,26 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.86",
+        what="declare a scored column while the floors still measure the oracle",
+        mutate="noop",
+        command=("python", "scripts/check_floor_subject.py"),
+        expect="ER-086",
+        edits=(
+            (
+                "models/intermediate/er_tf_all.yml",
+                "      - name: tf\n        data_type: double",
+                (
+                    "      - name: match_probability\n"
+                    "        data_type: double\n"
+                    "        description: >\n"
+                    "          Injected by verify_gates to simulate Stage 5 landing.\n"
+                    "      - name: tf\n        data_type: double"
+                ),
+            ),
+        ),
+    ),
+    Injection(
         platform_bound=True,
         standard="3.84",
         what="write baselines in engine order instead of canonical order",
