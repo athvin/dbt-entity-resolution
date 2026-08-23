@@ -346,6 +346,15 @@ INJECTIONS: tuple[Injection, ...] = (
         ),
     ),
     Injection(
+        standard="3.75",
+        what="put a non-deterministic function in a comparison level",
+        mutate="write:fixtures/model_jsons/hostile.json:"
+        '{"comparisons":[{"output_column_name":"c","comparison_levels":'
+        '[{"sql_condition":"random() > 0.5"}]}]}',
+        command=("python", "scripts/er_sidecar.py", "fixtures/model_jsons/hostile.json"),
+        expect="ER-036",
+    ),
+    Injection(
         standard="3.74",
         what="project more pairs than the derived budget allows",
         mutate="noop",

@@ -1,0 +1,286 @@
+"""§1.5's five rules, each shown to reject (Stage 1, DR-17).
+
+§1.5 names five negative tests as Stage 1 acceptance criteria. The positive case
+matters too, and it is the one that found the real defects: **the allow-list as
+published rejected Splink's own comparison library.**
+
+Every test here asserts the *specific* error code, not merely that validation
+failed. A validator that rejects for the wrong reason is still broken, and it is
+harder to notice later — the same argument 3.38 makes for `verify_gates.py` and
+§12.7 makes for comparators.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import er_sidecar  # noqa: E402
+
+FROZEN = ROOT / "fixtures" / "model_jsons" / "fake_1000_v1.json"
+
+
+def _model(condition: str) -> str:
+    """Build a minimal model JSON carrying one comparison level."""
+    return json.dumps(
+        {
+            "comparisons": [
+                {
+                    "output_column_name": "first_name",
+                    "comparison_levels": [
+                        {"sql_condition": condition, "label_for_charts": "test"},
+                    ],
+                }
+            ]
+        }
+    )
+
+
+def _codes(raw: str, bounds: dict[str, int] | None = None) -> list[str]:
+    with pytest.raises(er_sidecar.ValidationError) as caught:
+        er_sidecar.validate(raw, bounds)
+    return [finding.split(":")[0] for finding in caught.value.findings]
+
+
+# --- The positive case, which is where the real findings came from -----------
+
+
+def test_the_frozen_model_json_validates() -> None:
+    """A stock Splink model must pass, or the trust boundary is unusable.
+
+    This failed on first run and produced two findings about D6's allow-list:
+    it was written in DuckDB's vocabulary while §1.5 matches sqlglot's parsed
+    tree, and it omitted `abs`, which a stock DateOfBirthComparison emits.
+    """
+    artefact = er_sidecar.validate(FROZEN.read_text(encoding="utf-8"))
+    assert artefact["comparisons"] == 5
+    assert artefact["levels_validated"] == 28
+    assert len(artefact["er_model_sha"]) == 64
+
+
+def test_splinks_else_sentinel_is_not_parsed_as_sql() -> None:
+    """Splink writes the final level's condition as the literal `ELSE`.
+
+    Five of the frozen model's levels are exactly this. Parsing it as SQL fails
+    with "No expression was parsed from 'ELSE'", which reads like a malformed
+    model rather than a validator that does not know the format.
+    """
+    assert er_sidecar.validate(_model("ELSE"))["levels_validated"] == 1
+
+
+def test_boolean_operators_are_not_treated_as_function_calls() -> None:
+    """`exp.Or` is a `Func` subclass in sqlglot and reports `sql_names() == ["OR"]`.
+
+    Without excluding `exp.Connector`, an ordinary `a = b OR c IS NULL` is
+    rejected as calling an unlisted function named `or`.
+    """
+    assert er_sidecar.validate(_model('"a_l" = "a_r" OR "a_l" IS NULL'))
+
+
+@pytest.mark.parametrize(
+    ("canonical", "duckdb_spelling"),
+    [("time_to_unix", "epoch"), ("jarowinkler_similarity", "jaro_winkler_similarity")],
+)
+def test_sqlglot_canonical_names_map_back_to_the_d6_spelling(
+    canonical: str, duckdb_spelling: str
+) -> None:
+    """D6's list is in DuckDB's vocabulary; the tree is in sqlglot's.
+
+    Both of these are functions D6 explicitly allows, and both were rejected
+    before the mapping existed.
+    """
+    assert er_sidecar.SQLGLOT_CANONICAL_NAMES[canonical] == duckdb_spelling
+    assert duckdb_spelling in er_sidecar.ALLOWED_FUNCTIONS
+
+
+# --- Rule 1: the closed allow-list ------------------------------------------
+
+
+def test_an_unlisted_function_is_rejected_by_name() -> None:
+    """§1.5: "naming the function", not "invalid condition"."""
+    with pytest.raises(er_sidecar.ValidationError) as caught:
+        er_sidecar.validate(_model('md5("a_l") = md5("a_r")'))
+    assert any("ER-037" in f and "md5" in f for f in caught.value.findings)
+
+
+# --- Rule 2: non-determinism, listed or not ---------------------------------
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "try_strptime(\"dob_l\", '%Y-%m-%d') < current_date",
+        '"a_l" = "a_r" AND random() > 0.5',
+        "now() > try_strptime(\"dob_l\", '%Y-%m-%d')",
+    ],
+)
+def test_non_deterministic_functions_are_rejected(condition: str) -> None:
+    """The rule that keeps §6.3's determinism claim true rather than aspirational.
+
+    §1.5's benign case: an analyst adds an age-band level containing
+    `current_date` -- the natural way to write one -- gamma becomes a function
+    of the wall clock, and every parity gate silently stops being true while CI
+    merely looks flaky.
+    """
+    assert "ER-036" in _codes(_model(condition))
+
+
+def test_non_determinism_beats_the_allow_list() -> None:
+    """Rejected "whether or not they appear above".
+
+    Belt and braces: even if someone added `now` to the allow-list, rule 2 still
+    rejects it -- the two checks are ordered so non-determinism wins.
+    """
+    assert "ER-036" in _codes(_model("now() IS NOT NULL"))
+
+
+# --- Rule 3: structural rejection -------------------------------------------
+
+
+def test_a_statement_terminator_is_rejected_before_parsing() -> None:
+    """The classic bypass: sqlglot parses `a = b; drop table t` as TWO statements.
+
+    Validating only the first would allow-list the harmless half and pass the
+    rest through verbatim into compiled SQL.
+    """
+    assert "ER-033" in _codes(_model('"a_l" = "a_r"; drop table users'))
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        '"a_l" IN (SELECT x FROM secrets)',
+        '"a_l" = (SELECT max(x) FROM t)',
+    ],
+)
+def test_subqueries_are_rejected(condition: str) -> None:
+    assert "ER-035" in _codes(_model(condition))
+
+
+def test_unparseable_sql_is_rejected_as_such() -> None:
+    assert "ER-034" in _codes(_model("this is not sql ((("))
+
+
+# --- Rule 4: bounds ----------------------------------------------------------
+
+
+def test_too_many_comparisons_is_a_named_error() -> None:
+    """Bound the comparison count: enormous becomes a diagnosis, not a symptom."""
+    raw = json.dumps(
+        {
+            "comparisons": [
+                {
+                    "output_column_name": f"c{i}",
+                    "comparison_levels": [{"sql_condition": "ELSE"}],
+                }
+                for i in range(60)
+            ]
+        }
+    )
+    assert "ER-030" in _codes(raw, {"er_max_comparisons": 50})
+
+
+def test_too_many_levels_is_a_named_error() -> None:
+    raw = json.dumps(
+        {
+            "comparisons": [
+                {
+                    "output_column_name": "wide",
+                    "comparison_levels": [{"sql_condition": "ELSE"} for _ in range(40)],
+                }
+            ]
+        }
+    )
+    assert "ER-031" in _codes(raw, {"er_max_levels_per_comparison": 30})
+
+
+def test_an_oversized_json_is_a_named_error() -> None:
+    assert "ER-032" in _codes(_model("ELSE"), {"er_max_model_json_bytes": 10})
+
+
+# --- Rule 5: the sha is of the VALIDATED artefact ----------------------------
+
+
+def test_the_sha_is_stable_across_formatting() -> None:
+    """Canonical serialisation, so whitespace in the environment cannot move it.
+
+    D1 delivers the JSON through an environment variable, where re-indentation
+    is routine and must not invalidate every downstream baseline.
+    """
+    compact = json.dumps(json.loads(_model("ELSE")), separators=(",", ":"))
+    spaced = json.dumps(json.loads(_model("ELSE")), indent=4)
+    assert (
+        er_sidecar.validate(compact)["er_model_sha"] == er_sidecar.validate(spaced)["er_model_sha"]
+    )
+
+
+def test_the_sha_changes_when_the_model_changes() -> None:
+    """Otherwise the sha is decoration and rule 5 protects nothing."""
+    assert (
+        er_sidecar.validate(_model("ELSE"))["er_model_sha"]
+        != er_sidecar.validate(_model('"a_l" = "a_r"'))["er_model_sha"]
+    )
+
+
+def test_an_invalid_model_produces_no_sha_at_all() -> None:
+    """Rule 5 is what makes rules 1-4 unskippable.
+
+    An unvalidated JSON has no sha, and a model with no sha does not build --
+    so there is no path that reaches a build having skipped validation.
+    """
+    with pytest.raises(er_sidecar.ValidationError) as caught:
+        er_sidecar.validate(_model("current_date IS NOT NULL"))
+    assert not hasattr(caught.value, "er_model_sha")
+
+
+# --- Anti-vacuity -------------------------------------------------------------
+
+
+def test_a_model_with_no_conditions_is_rejected() -> None:
+    """A validator that inspects nothing passes everything.
+
+    The same empty-subject failure §6.1 diagnoses, at the trust boundary.
+    """
+    assert "ER-039" in _codes(json.dumps({"comparisons": []}))
+
+
+def test_every_finding_is_reported_not_just_the_first() -> None:
+    """Three bad levels should report three, not require three build attempts."""
+    raw = json.dumps(
+        {
+            "comparisons": [
+                {
+                    "output_column_name": "c",
+                    "comparison_levels": [
+                        {"sql_condition": "current_date IS NOT NULL"},
+                        {"sql_condition": 'md5("a_l") = md5("a_r")'},
+                        {"sql_condition": '"a_l" IN (SELECT x FROM t)'},
+                    ],
+                }
+            ]
+        }
+    )
+    codes = _codes(raw)
+    assert {"ER-036", "ER-037", "ER-035"} <= set(codes)
+
+
+def test_malformed_json_is_rejected() -> None:
+    assert "ER-038" in _codes("{not json")
+
+
+def test_the_allow_list_is_a_frozenset_so_it_cannot_be_mutated() -> None:
+    """Enforce "normative and closed" with the type, not with convention."""
+    assert isinstance(er_sidecar.ALLOWED_FUNCTIONS, frozenset)
+    assert isinstance(er_sidecar.NON_DETERMINISTIC, frozenset)
+
+
+def test_no_function_is_both_allowed_and_non_deterministic() -> None:
+    """The two lists must not disagree, or precedence decides correctness by accident."""
+    overlap = er_sidecar.ALLOWED_FUNCTIONS & er_sidecar.NON_DETERMINISTIC
+    assert not overlap, f"{sorted(overlap)} appear in both lists"

@@ -1708,9 +1708,10 @@ emits `er_gamma_columns`: every column the JSON references must appear in `er_in
 one fails compilation naming the column rather than producing a `Binder Error` from inside a generated
 `CASE` (DR-16).
 
-**Blocked by `DbtBestPractices.md` B.8**, because the snapshot AC above reviews rendered scoring SQL
-containing D11 rec 4's subquery, which §11.1's `forbid_subquery_in = both` forbids (RC46). That is now this
-stage's only open blocker.
+~~**Blocked by `DbtBestPractices.md` B.8**~~ — **UNBLOCKED 2026-08-23 (DR-23, PC-3).** The snapshot AC
+reviews rendered scoring SQL that needed D11 rec 4's single-evaluation construct, and B.8 resolved to
+option **(c)**, the lateral column alias: measured evaluating **once per row** on DuckDB 1.5.5, so no
+subquery is emitted and `forbid_subquery_in` keeps its configured scope. Stage 1 has no open blockers.
 
 ### Stage 2 — Staging & term frequency
 

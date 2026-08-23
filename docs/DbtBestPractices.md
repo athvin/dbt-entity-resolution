@@ -291,6 +291,18 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 | 3.70 | A model's unit tests cover the case classes D12 enumerates, and each unanswered question is recorded rather than left blank | — | — | **Convention (unenforced).** A gate can count tests and can require the recorded answer; it cannot know that a `CASE` arm has no case. §12.2 states the checklist and §17 puts it in review |
 | 3.71 | A consumer's build never executes this package's unit tests | `consumer_smoke/` job (§19.3, 3.64) asserts zero `unit_test` rows in its `run_results.json`; if dbt does execute them, the package ships the documented `--exclude-resource-type unit_test` guard and the job asserts that instead | CI | Job fails |
 
+| | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
+| 3.75 | The model JSON passes the §1.5 trust boundary before anything builds | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact | P + CI | Non-zero exit naming the level and the function |
+
+> **On 3.75 — matching the tree, and matching EVERY alias.** §1.5 requires validation against the parsed
+> tree because *"validating the raw string instead of the parsed tree is what makes an allow-list
+> bypassable"*. Running it revealed a second, sharper version of the same problem: **the lists are written
+> in DuckDB's vocabulary and the tree speaks sqlglot's.** `EPOCH(...)` parses to `time_to_unix`,
+> `jaro_winkler_similarity` to `jarowinkler_similarity`, `random()` to `Rand`, `version()` to
+> `CURRENT_VERSION`. On the allow-list a mismatch is a noisy false **reject**; on the non-determinism list
+> it is a silent false **accept** — `random()` passed validation. The check now tests **every**
+> `sql_names()` alias, which is robust to canonicalisation in both directions and needs no hand-kept map.
+
 | | **— v2.5 addition (Stage 0.6 / D11 rec 5 / G14). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.74 | A pair-grain model asserts its projected size against the derived budget **before materialising** | `er_assert_pair_budget()` raises at compile time from the model itself; `er_max_pairs` is derived from `er_bytes_per_pair` and the configured memory budget, never a constant | C | `raise_compiler_error` naming the projection, the cap and both in GiB |
 
@@ -3511,6 +3523,31 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     than the `gmail.com` a naive generator reaches for. Its test runs `check_pii_heuristics.check` itself
     rather than re-stating the rules, so a change to the detectors changes the test with them. A generator
     that tripped the repository's own PII scan would make the scan something people switch off.
+
+53. **D6's "normative and closed" allow-list rejects Splink's own comparison library.** The first run of
+    the §1.5 sidecar against the frozen model JSON failed on a stock `DateOfBirthComparison`:
+    `ABS(EPOCH(try_strptime("dob_l", ...)) - EPOCH(...)) <= 2629800.0`. **`abs` is absent from the list**,
+    though D6 states it surveyed *"all 21 comparison-level types in `comparison_level_library`"*. Added
+    with the determinism argument D6 requires — `abs` is pure and reads no session or wall-clock state.
+    The list was derived by reading; executing it disproved it.
+
+54. **The allow-list and the parsed tree were in different languages, and on one list that meant a silent
+    accept.** §1.5 mandates matching the sqlglot tree rather than the raw string, correctly — but D6's
+    list is written in DuckDB's vocabulary. sqlglot canonicalises `EPOCH` to `time_to_unix` and
+    `jaro_winkler_similarity` to `jarowinkler_similarity`, so **two allow-listed functions were being
+    rejected**. Worse, `random()` parses to `exp.Rand` whose `sql_names()` is `['RAND', 'RANDOM']`:
+    reading only the first alias yields `rand`, which was not in the non-determinism list, so
+    **`random()` passed validation** — and §6.3's determinism claim would have been quietly untrue.
+    `version()` → `CURRENT_VERSION` was the same. **On an allow-list a vocabulary mismatch fails noisily;
+    on a deny-list it fails silently**, which is the asymmetry worth remembering. Fixed by testing every
+    alias rather than the canonical name.
+
+55. **Splink's else-level `sql_condition` is the literal string `ELSE`**, not SQL — five of the frozen
+    model's 28 levels. Parsing it raises *"No expression was parsed from 'ELSE'"*, which reads like a
+    malformed model rather than a validator that does not know the format. And **boolean operators are
+    `Func` subclasses in sqlglot**: `exp.Or` reports `sql_names() == ["OR"]`, so an ordinary
+    `a = b OR c IS NULL` was rejected as calling an unlisted function `or`. `exp.Connector` is what
+    separates an operator from a call.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
