@@ -275,6 +275,23 @@ INJECTIONS: tuple[Injection, ...] = (
         expect="nested `unit_tests:` key",
     ),
     Injection(
+        standard="3.73",
+        what="restore a second copy of a live config file into the document",
+        mutate="noop",
+        command=("python", "scripts/check_canonical_homes.py"),
+        expect="which EXISTS in the repository",
+        edits=(
+            (
+                str(DOC),
+                "**Canonical: [`packages.yml`](../packages.yml).**",
+                (
+                    "```yaml\npackages:\n  - package: dbt-labs/dbt_utils\n```\n\n"
+                    "**Canonical: [`packages.yml`](../packages.yml).**"
+                ),
+            ),
+        ),
+    ),
+    Injection(
         standard="3.39",
         what="delete a script the section 3 matrix names as a mechanism",
         mutate="unlink:scripts/check_verified_markers.py",

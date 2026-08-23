@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import check_baseline_manifests  # noqa: E402
 import check_bouncer_ran  # noqa: E402
+import check_canonical_homes  # noqa: E402
 import check_divergence_log  # noqa: E402
 import check_flags_parity  # noqa: E402
 import check_no_nondeterminism  # noqa: E402
@@ -352,14 +353,25 @@ def test_bouncer_ran_rejects_a_missing_results_file(tmp_path: Path) -> None:
 # and injects one defect -- the same shape as `verify_gates.py`, one layer down.
 # ---------------------------------------------------------------------------
 
+# Every path the whole-tree checks resolve against. `packages.yml`,
+# `dbt_project.yml` and the rest are here because 3.73 fires only when the file
+# a heading names actually EXISTS -- a mirror missing them makes its tests pass
+# vacuously, which is the failure `pending_subjects.yml` guards one layer down.
 _MIRROR = (
     "docs",
     "scripts",
     "models",
+    "macros",
+    "profiles",
+    ".github",
     "dbt-bouncer.yml",
     "uv.lock",
     ".pre-commit-config.yaml",
     ".sqlfluff",
+    ".sqlfluffignore",
+    "packages.yml",
+    "dbt_project.yml",
+    "package-lock.yml",
     "integration_tests",
 )
 
@@ -703,3 +715,69 @@ def test_standards_matrix_rejects_an_injection_with_no_matrix_row(tmp_path: Path
     doc.write_text(doc.read_text().replace("| 3.72 |", "| 3.972 |", 1))
     errors = check_standards_matrix.check(scratch)
     assert any("3.72" in e and "no row" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# 3.73 -- one canonical home per configuration artifact.
+# ---------------------------------------------------------------------------
+
+
+def test_canonical_homes_pass_on_the_real_repository() -> None:
+    assert check_canonical_homes.check(ROOT) == []
+
+
+def test_canonical_homes_rejects_a_second_copy_of_a_live_file(tmp_path: Path) -> None:
+    """The failure the rule exists for: a copy that cannot be run and never expires."""
+    scratch = _mirror(tmp_path)
+    doc = scratch / "docs" / "DbtBestPractices.md"
+    doc.write_text(
+        doc.read_text().replace(
+            "**Canonical: [`packages.yml`](../packages.yml).**",
+            "```yaml\npackages:\n  - package: dbt-labs/dbt_utils\n```\n\n"
+            "**Canonical: [`packages.yml`](../packages.yml).**",
+            1,
+        )
+    )
+    errors = check_canonical_homes.check(scratch)
+    assert any("packages.yml" in e and "EXISTS in the repository" in e for e in errors)
+
+
+def test_canonical_homes_allows_a_marked_excerpt(tmp_path: Path) -> None:
+    scratch = _mirror(tmp_path)
+    doc = scratch / "docs" / "DbtBestPractices.md"
+    doc.write_text(
+        doc.read_text().replace(
+            "**Canonical: [`packages.yml`](../packages.yml).**",
+            "<!-- excerpt: the one shipped entry -->\n```yaml\npackages: []\n```\n\n"
+            "**Canonical: [`packages.yml`](../packages.yml).**",
+            1,
+        )
+    )
+    assert check_canonical_homes.check(scratch) == []
+
+
+def test_canonical_homes_rejects_an_excerpt_that_is_really_a_copy(tmp_path: Path) -> None:
+    """An excerpt marker is not a way to keep a whole file."""
+    scratch = _mirror(tmp_path)
+    doc = scratch / "docs" / "DbtBestPractices.md"
+    body = "\n".join(f"  line_{i}: value" for i in range(20))
+    doc.write_text(
+        doc.read_text().replace(
+            "**Canonical: [`packages.yml`](../packages.yml).**",
+            f"<!-- excerpt: too much -->\n```yaml\n{body}\n```\n\n"
+            "**Canonical: [`packages.yml`](../packages.yml).**",
+            1,
+        )
+    )
+    errors = check_canonical_homes.check(scratch)
+    assert any("is a copy with a label on it" in e for e in errors)
+
+
+def test_canonical_homes_ignores_a_block_under_a_heading_naming_no_live_file(
+    tmp_path: Path,
+) -> None:
+    """Design content in fenced blocks is the point of the document, not a violation."""
+    scratch = _mirror(tmp_path)
+    doc = scratch / "docs" / "DbtBestPractices.md"
+    doc.write_text(doc.read_text() + "\n\n### An illustration\n\n```sql\nselect 1\n```\n")
+    assert check_canonical_homes.check(scratch) == []
