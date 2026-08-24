@@ -1,0 +1,176 @@
+---
+version: 2
+
+models:
+  - name: er_int_candidate_pairs
+    description: >
+      **Purpose**. Stage 3, blocking: every record pair the rest of the pipeline
+      will ever score. Splink's `__splink__blocked_id_pairs`. This is the
+      critical path's highest-risk parity stage because **recall lost here is
+      unrecoverable** -- no comparison, no scoring and no clustering can recover
+      a pair blocking never generated. Section 1.8 measures the cost: two
+      missing rules take blocking recall from 0.8124 to 0.5057, and every parity
+      gate stays green throughout, because both engines agree about the pairs
+      they were both given.
+
+
+      **Grain**. One row per `(join_key_l, join_key_r, match_key)`. The pair is
+      unordered and canonicalised by `l.unique_id < r.unique_id`, so each pair
+      appears once, never mirrored and never self-paired. A pair caught by more
+      than one rule carries the LOWEST-indexed rule's `match_key` only -- that
+      is Splink's behaviour and the reason the generator emits a combined
+      `AND NOT (coalesce(...) OR ...)` rather than deduplicating afterwards.
+
+
+      **Upstream**. `er_stg_input`, joined to itself (dedupe_only). The rules
+      arrive as `er_blocking_rules`, published by the sidecar from the
+      **validated** model JSON -- they are SQL executed with the consumer's
+      credentials, so only the version that cleared section 1.5 is ever used
+      (D.0 finding 81).
+
+
+      **Splink parity**. Exact `(join_key_l, join_key_r, match_key)` set
+      equality against `fixtures/baselines/fake_1000/blocked_pairs.parquet`,
+      captured from Splink's own `block_using_rules_sqls` -- blocking and
+      nothing else, so a Stage 3 failure cannot be masked by a Stage 4/5 change.
+      `match_key` is compared as VARCHAR (A.4): DuckDB casts `'0' = 0` to true,
+      so a SQL equality test cannot see a type divergence and the comparator is
+      type-strict instead. Per-rule counts on the reference corpus:
+      1998 / 1351 / 466 / 174.
+
+
+      **Determinism**. A join and a filter: no ordering, no aggregation, no
+      floating point. Deterministic by construction. The one type-dependence is
+      `l.unique_id < r.unique_id`, which is why section 2.0 contracts that column
+      VARCHAR -- `'507' < '64'` is true as text and false as integers, and the
+      difference moved 148 of 3,989 pairs (D.0 finding 82).
+
+
+      **Caveats**. There is deliberately **no filter on the join keys** -- no
+      `is not null`, no `<> ''`, no `coalesce`. Splink's generated SQL contains
+      none, so adding one diverges: D2's empty-string fixture measures the
+      natural `where key is not null and key <> ''` deleting 3 of 4 pairs.
+      Stripping the `coalesce` from the exclusion clause is the other silent
+      failure, costing **926 of 3,989 pairs (23.2%)** with no error and the
+      right output shape, because a NULL comparison is not false and `NOT NULL`
+      is NULL. G9's consequence also lives here: two records sharing a
+      `unique_id` never pair with each other, which is why section 2.0 tests
+      uniqueness rather than assuming it.
+
+    config:
+      contract:
+        enforced: true
+      tags: ["parity_stage_3"]
+      meta:
+        # Section 8.3's pair-grain waiver, recorded rather than assumed. A
+        # composite VARCHAR DDL primary key over three columns measured ~100x
+        # the cost of the equivalent test and builds a multi-GiB ART index at
+        # 10M rows. The grain is held by the uniqueness test below, which is a
+        # real assertion rather than a declaration dbt-duckdb does not enforce.
+        primary_key_by_test_reason: >
+          Pair grain: a composite VARCHAR PK over
+          (join_key_l, join_key_r, match_key) costs ~100x the test and builds a
+          multi-GiB ART index. Held by dbt_utils.unique_combination_of_columns.
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - join_key_l
+              - join_key_r
+              - match_key
+      # Canonical orientation, asserted. This is what makes the pair set a SET:
+      # without it the same pair can appear mirrored and every downstream count
+      # doubles silently.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "join_key_l < join_key_r"
+
+    columns:
+      - name: match_key
+        data_type: varchar
+        description: >
+          The zero-based index of the blocking rule that generated this pair, as
+          a VARCHAR literal -- Splink renders `'{match_key}' as match_key`, and
+          A.4 requires it compared as VARCHAR. A pair caught by several rules
+          carries only the lowest index.
+        constraints:
+          - type: not_null
+      - name: join_key_l
+        data_type: varchar
+        description: >
+          The left record's `unique_id`. Splink's own column name for this
+          table; the rename to `unique_id_l` happens in Stage 4, where Splink
+          does it too.
+        constraints:
+          - type: not_null
+      - name: join_key_r
+        data_type: varchar
+        description: >
+          The right record's `unique_id`, strictly greater than `join_key_l` as
+          TEXT. That comparison is type-dependent and section 2.0 contracts the
+          column VARCHAR for exactly this reason.
+        constraints:
+          - type: not_null
+
+unit_tests:
+  - name: candidate_pairs_assigns_the_lowest_matching_rule_and_never_duplicates
+    description: >
+      The property that fails silently. `a` and `b` share BOTH `first_name` and
+      `surname`, so rules 0 and 1 both match them -- the pair must appear
+      **once**, with `match_key = '0'`.
+
+
+      Emitting it twice is what a naive `UNION ALL` of independent rules does,
+      and it is invisible downstream: every pair still scores correctly, the
+      counts are merely wrong. `c` shares only `surname`, so it pairs with both
+      `a` and `b` under rule 1 and pins that the exclusion clause removes only
+      what an EARLIER rule already caught.
+
+
+      `d` carries a NULL `first_name` and a NULL `surname`: it must pair with
+      nobody. `NULL = NULL` is NULL, not true -- and the `coalesce(..., false)`
+      in the exclusion clause is what stops `NOT NULL` from deleting real pairs
+      elsewhere.
+    model: er_int_candidate_pairs
+    overrides:
+      vars:
+        er_blocking_rules:
+          - 'l."first_name" = r."first_name"'
+          - 'l."surname" = r."surname"'
+    given:
+      - input: ref('er_stg_input')
+        format: sql
+        rows: |
+          select cast('a' as varchar) as unique_id,
+                 cast('Ann' as varchar) as first_name,
+                 cast('Shah' as varchar) as surname,
+                 cast('1990-01-01' as varchar) as dob,
+                 cast('Leeds' as varchar) as city,
+                 cast('a@x.invalid' as varchar) as email,
+                 cast('c1' as varchar) as cluster
+          union all
+          select cast('b' as varchar), cast('Ann' as varchar),
+                 cast('Shah' as varchar), cast('1990-01-02' as varchar),
+                 cast('Hull' as varchar), cast('b@x.invalid' as varchar),
+                 cast('c1' as varchar)
+          union all
+          select cast('c' as varchar), cast('Bo' as varchar),
+                 cast('Shah' as varchar), cast('1991-01-01' as varchar),
+                 cast('York' as varchar), cast('c@x.invalid' as varchar),
+                 cast('c2' as varchar)
+          union all
+          select cast('d' as varchar), cast(null as varchar),
+                 cast(null as varchar), cast('1992-01-01' as varchar),
+                 cast('Hull' as varchar), cast('d@x.invalid' as varchar),
+                 cast('c3' as varchar)
+    expect:
+      format: sql
+      rows: |
+        select cast('0' as varchar) as match_key,
+               cast('a' as varchar) as join_key_l,
+               cast('b' as varchar) as join_key_r
+        union all
+        select cast('1' as varchar), cast('a' as varchar), cast('c' as varchar)
+        union all
+        select cast('1' as varchar), cast('b' as varchar), cast('c' as varchar)

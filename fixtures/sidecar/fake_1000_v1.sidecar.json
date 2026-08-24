@@ -39,6 +39,12 @@
       "name": "bf_tf_adj_email"
     }
   ],
+  "er_blocking_rules": [
+    "l.\"first_name\" = r.\"first_name\"",
+    "l.\"surname\" = r.\"surname\"",
+    "l.\"dob\" = r.\"dob\"",
+    "l.\"email\" = r.\"email\""
+  ],
   "er_gamma_columns": [
     {
       "data_type": "INTEGER",

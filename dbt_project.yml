@@ -82,6 +82,10 @@ vars:
   # sidecar from the SAME predicate that decides `bf_tf_adj_` -- two
   # independently maintained lists is M2's drift.
   er_tf_columns: []
+  # Stage 3's blocking rules. No default: a package that guesses these decides
+  # which pairs a consumer can ever match, and an empty list raises ER-050
+  # rather than silently generating the full cross product.
+  er_blocking_rules: []
 
   # D7a -- term frequency is FROZEN BY SNAPSHOT. `frozen` is the default and the
   # mode every parity and production run uses; `refresh` recomputes from the live

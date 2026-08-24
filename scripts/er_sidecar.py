@@ -450,6 +450,14 @@ def build(raw: str, bounds: dict[str, int] | None = None) -> dict[str, Any]:
         # in a link job whose orientation is settled. What is not legitimate is
         # not knowing, so it travels with the artefact.
         "asymmetric_levels": _check_symmetry(validated["model"]),
+        # Stage 3 consumes these as `er_blocking_rules`. Published from the
+        # VALIDATED model and never from the raw one -- these strings are
+        # interpolated into `er_blocking_sql` and executed with the consumer's
+        # credentials, so the only version that may leave this module is the one
+        # that cleared §1.5 (D.0 finding 81).
+        "er_blocking_rules": [
+            condition for _, condition in _blocking_rules(validated["model"]) if condition
+        ],
         # M2: published as vars so `schema.yml` can contract the two models
         # whose column set is data. RC57's drift guard covers these against the
         # rendered SQL and the unit-test fixtures -- three artefacts, one JSON.

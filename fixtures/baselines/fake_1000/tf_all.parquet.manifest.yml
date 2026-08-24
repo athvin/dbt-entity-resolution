@@ -10,13 +10,13 @@ mint_threads: 1
 duckdb_version: "1.5.5"
 sqlglot_version: "30.17.0"
 platform:
-  os: "linux"
-  architecture: "amd64"
+  os: "darwin"
+  architecture: "arm64"
   duckdb_build: "1.5.5"
 date: "2026-08-23"
 excluded_columns:
   - "__splink_salt"
-producing_commit: "7f08c73"
+producing_commit: "fb31b58"
 source_fixture: "fixtures/source/fake_1000.csv"
 source_fixture_sha256: "66f9b8f92b9b082ef982fe18c77030fbed8780f06ce1d40d7106be5a72392e2a"
 thresholds:
