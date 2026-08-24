@@ -29,8 +29,16 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: trailing-whitespace
-      # This is the hook that would have caught c7ffae6 being pushed straight to
-      # main. It had not landed yet; see LOOP-STATE.md's 2026-08-23 entry.
+      # The hook that stops a change reaching main without a PR.
+      #
+      # It could NOT have caught c7ffae6, and an earlier version of this comment
+      # said it would have. `pre-commit install` had never been run, so
+      # `.git/hooks/pre-commit` did not exist and nothing here ran on `git
+      # commit` at all -- the only execution path was `pre-commit run
+      # --all-files` in CI, which SKIPs this hook by name. Stage 3 then went
+      # straight to main and CI went red (D.0 83, 84). Installation is now
+      # asserted by 3.87, because a config file cannot check whether it is
+      # installed and `.git/hooks/` is not version controlled.
       - id: no-commit-to-branch
         args: [--branch, main]
       - id: check-yaml
@@ -67,27 +75,35 @@ repos:
       # both roots once invoked. A gate that cannot trigger is section 6.1's
       # "check whose subject has disappeared", one layer up.
       # ---------------------------------------------------------------------
+      # Every local hook runs through `uv run`, and that is load-bearing.
+      #
+      # `language: system` executes the entry against the ambient PATH. In CI
+      # these run inside `uv run pre-commit run --all-files`, so bare `python`
+      # resolves to the venv's -- but on a plain `git commit` it resolves to
+      # nothing at all on a machine with only `python3`. Every one of these
+      # hooks failed with `Executable \`python\` not found` the first time the
+      # commit hook was actually installed (D.0 finding 85). They had never run.
       - id: er-yml-pairing
         name: "1:1 .sql <-> .yml pairing (both project roots)"
-        entry: python scripts/check_yml_pairing.py
+        entry: uv run python scripts/check_yml_pairing.py
         language: system
         pass_filenames: false
 
       - id: er-no-nondeterminism
         name: "no non-deterministic Jinja in model code (both project roots)"
-        entry: python scripts/check_no_nondeterminism.py
+        entry: uv run python scripts/check_no_nondeterminism.py
         language: system
         pass_filenames: false
 
       - id: er-flags-parity
         name: "flags: identical in both dbt_project.yml files"
-        entry: python scripts/check_flags_parity.py
+        entry: uv run python scripts/check_flags_parity.py
         language: system
         pass_filenames: false
 
       - id: er-root-packages-minimal
         name: "root packages.yml stays minimal"
-        entry: python scripts/check_root_packages_minimal.py
+        entry: uv run python scripts/check_root_packages_minimal.py
         language: system
         pass_filenames: false
 
@@ -96,39 +112,39 @@ repos:
       # their own step in the lint job rather than here.
       - id: er-standards-matrix
         name: "every mechanism in the section 3 matrix exists and is wired up"
-        entry: python scripts/check_standards_matrix.py
+        entry: uv run python scripts/check_standards_matrix.py
         language: system
         pass_filenames: false
 
       - id: er-verified-markers
         name: "[VERIFIED] markers match the installed toolchain"
-        entry: python scripts/check_verified_markers.py
+        entry: uv run python scripts/check_verified_markers.py
         language: system
         pass_filenames: false
 
       - id: er-baseline-manifests
         name: "every baseline carries a provenance manifest"
-        entry: python scripts/check_baseline_manifests.py
+        entry: uv run python scripts/check_baseline_manifests.py
         language: system
         pass_filenames: false
 
       - id: er-model-json-sidecar
         name: "model JSON passes the 1.5 trust boundary"
         entry: >-
-          python scripts/er_sidecar.py fixtures/model_jsons/fake_1000_v1.json
+          uv run python scripts/er_sidecar.py fixtures/model_jsons/fake_1000_v1.json
           --out fixtures/sidecar/fake_1000_v1.sidecar.json --check
         language: system
         pass_filenames: false
 
       - id: er-pii-heuristics
         name: "fixtures and seeds are synthetic, and declare it"
-        entry: python scripts/check_pii_heuristics.py
+        entry: uv run python scripts/check_pii_heuristics.py
         language: system
         pass_filenames: false
 
       - id: er-canonical-homes
         name: "no document holds a second copy of a live config file"
-        entry: python scripts/check_canonical_homes.py
+        entry: uv run python scripts/check_canonical_homes.py
         language: system
         pass_filenames: false
 
@@ -137,13 +153,13 @@ repos:
       # holding a stale copy of a Make target (3.83, D.0 finding 69).
       - id: er-ci-makefile-parity
         name: "the CI workflow and the Makefile agree on what they look at"
-        entry: python scripts/check_ci_makefile_parity.py
+        entry: uv run python scripts/check_ci_makefile_parity.py
         language: system
         pass_filenames: false
 
       - id: er-unit-test-fixtures
         name: "unit-test fixtures are format: sql with explicit casts"
-        entry: python scripts/check_unit_test_fixtures.py
+        entry: uv run python scripts/check_unit_test_fixtures.py
         language: system
         pass_filenames: false
 
@@ -151,7 +167,7 @@ repos:
       # table was written, so there was nothing to harden.
       - id: er-workflow-hardening
         name: "workflows are SHA-pinned and least-privilege"
-        entry: python scripts/check_workflow_hardening.py
+        entry: uv run python scripts/check_workflow_hardening.py
         language: system
         pass_filenames: false
 
@@ -159,7 +175,7 @@ repos:
       # (3.57). A script with no failing-case test has not been shown to fire.
       - id: er-python-tests
         name: "pytest over the enforcement scripts"
-        entry: pytest tests_python -q
+        entry: uv run pytest tests_python -q
         language: system
         pass_filenames: false
         files: ^(scripts|tests_python|dbt_bouncer_checks)/.*\.py$

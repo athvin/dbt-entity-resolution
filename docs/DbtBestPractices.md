@@ -293,6 +293,7 @@ The normative table. **C** = compile · **P** = pre-commit · **B** = build · *
 
 | | **— v2.6 addition (Stage 1 / §1.5 / DR-17). `[VERIFIED]` against the §4 pins. —** | | | |
 | 3.75 | The model JSON passes the §1.5 trust boundary before anything builds -- **both** SQL-bearing fields, comparison levels **and** `blocking_rules_to_generate_predictions` (D.0 finding 81) | `scripts/er_sidecar.py` validates against the **parsed sqlglot tree**: D6's closed allow-list, non-deterministic functions rejected listed or not, structural rejection, input bounds, and `er_model_sha` over the validated artefact. One code path for both fields -- two policies is how one of them ended up with none | P + CI | Non-zero exit naming the level or rule and the function |
+| 3.87 | pre-commit is INSTALLED, not merely configured, so `git commit` actually runs the hooks (D.0 finding 84) | `scripts/check_hooks_installed.py` -- asserts `.git/hooks/pre-commit` exists and is pre-commit's; skipped under CI, where the hooks must NOT be installed | pre-commit + CI (`make repo-checks`) | Non-zero exit naming the missing hook and the command that installs it |
 | 3.86 | Once the package declares a scored column, the quality floors measure the PACKAGE and not the oracle (§1.8, M12) | `scripts/check_floor_subject.py` -- keyed on a `match_probability` column DECLARATION and on whether the measurement reads a committed file, so neither renaming a model nor renaming the baseline directory disarms it | CI (`make repo-checks`, inside `make lint`) | `ER-086` naming the declaring model |
 | 3.84 | Every committed baseline regenerates byte-identically from the frozen model (§20.1, A.4's "canonical ordering", D.0 finding 71) | `scripts/check_baselines_reproducible.py` -- regenerates into a temp dir and compares `sha256`; `gen_baseline.py` canonicalises column and row order | CI | Check fails naming the artefact and both hashes |
 | 3.83 | The CI workflow and the Makefile agree on which project and which paths their shared commands look at (§17, D.0 finding 69) | `scripts/check_ci_makefile_parity.py` -- compares `--project-dir` and target paths for every drift-prone command present in both | pre-commit + CI | Check fails naming the command and both sides' targets |
@@ -3906,6 +3907,49 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     exists precisely so a local green cannot be mistaken for a verified one, and it said so. What is
     missing is that nothing *requires* the re-mint when a baseline changes — the obligation lives in my
     head and in a commit-message habit, which is where finding 74's false history came from too.
+
+84. **The hook that exists to stop exactly finding 83 has never been able to run.**
+    `.pre-commit-config.yaml` carries `no-commit-to-branch --branch main`, and the comment above it read:
+    *"This is the hook that would have caught c7ffae6 being pushed straight to main."* It could not have.
+    **`pre-commit install` had never been run in this working tree**, so `.git/hooks/pre-commit` did not
+    exist and no hook in that file has ever run on a `git commit`. The single execution path is
+    `pre-commit run --all-files` in CI — where `no-commit-to-branch` is explicitly `SKIP`ped by name,
+    because CI is on a detached head and it would fail every run.
+
+    So the guard was configured, documented, **credited with a past save it did not make**, and
+    structurally incapable of firing. Every `git commit` in this session ran zero hooks. It is this
+    repository's own recurring defect — a gate that looks like it works — aimed squarely at this
+    repository's own recurring process failure, and it took committing to main to discover it.
+
+    Closed by **3.87**, which asserts the installation rather than the configuration. A config file cannot
+    check whether it is installed, and `.git/hooks/` is not version controlled — a fresh clone starts with
+    the hooks absent no matter what the config says. That is not an edge case to tolerate; it is the whole
+    reason the check has to exist. Verified both ways: exit 1 with the hook removed, 0 with it restored,
+    and `git commit` on main is now refused.
+
+85. **Installing the hook revealed that thirteen of the hooks could never have run either.** The first
+    `git commit` after `pre-commit install` failed thirteen local hooks at once, all with the same
+    message: ``Executable `python` not found``.
+
+    `language: system` executes the entry against the ambient PATH. In CI these run *inside*
+    `uv run pre-commit run --all-files`, so a bare `python` resolves to the venv's interpreter and
+    everything passes. On a plain `git commit` there is no `uv run` wrapper, and this machine — like most
+    modern macOS installs — has `python3` and no `python` at all. So every hook written as
+    `entry: python scripts/…` was fine in the one context anyone had ever exercised and broken in the
+    context it exists for.
+
+    Nobody noticed because of finding 84: the hooks were never installed, so the commit path was never
+    taken. **Two independent breakages, each of which perfectly concealed the other** — the hooks could not
+    run because they were not installed, and installing them would have failed because they could not run.
+    Every entry is now `uv run …`, which resolves in both contexts.
+
+    **The last of the thirteen took three attempts, for the same reason twice.** Its entry is a folded
+    scalar — `entry: >-` — so `python` begins on the *next* line, and two successive string replacements
+    aimed at `entry: python ` and `entry: >` both missed it. Throughout,
+    `pre-commit run --all-files` reported **zero failures**, because that path runs under `uv run` where
+    `python` resolves: the identical blind spot that caused the finding, reproduced while fixing it. Only
+    an actual `git commit` could tell the truth, and only after 84 was closed could an actual `git commit`
+    run the hooks at all.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
