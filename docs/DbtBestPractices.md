@@ -3943,6 +3943,14 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     run because they were not installed, and installing them would have failed because they could not run.
     Every entry is now `uv run …`, which resolves in both contexts.
 
+    **The last of the thirteen took three attempts, for the same reason twice.** Its entry is a folded
+    scalar — `entry: >-` — so `python` begins on the *next* line, and two successive string replacements
+    aimed at `entry: python ` and `entry: >` both missed it. Throughout,
+    `pre-commit run --all-files` reported **zero failures**, because that path runs under `uv run` where
+    `python` resolves: the identical blind spot that caused the finding, reproduced while fixing it. Only
+    an actual `git commit` could tell the truth, and only after 84 was closed could an actual `git commit`
+    run the hooks at all.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`
