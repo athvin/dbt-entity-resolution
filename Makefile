@@ -37,11 +37,6 @@ IT  := --project-dir integration_tests
 # that both dbt and the linter can see. Same mechanism as DBT_ER_MODEL_JSON.
 export DBT_ER_THRESHOLDS ?= [{"auto_merge": 0.9}]
 
-# Stage 4's comparison levels, from the COMMITTED sidecar rather than from the
-# model JSON directly: `comparison_vector_value` is Splink's and only the
-# sidecar has resolved it (A.2 C2). Same environment channel as the two above.
-export DBT_ER_COMPARISONS ?= $(shell uv run python scripts/er_sidecar.py \
-    fixtures/model_jsons/fake_1000_v1.json --emit er_comparisons)
 
 # Section 22.1: float-exact gates are anchored to linux/amd64. On anything else
 # they are ADVISORY, and must say so rather than appearing to pass.

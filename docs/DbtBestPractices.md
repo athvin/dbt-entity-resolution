@@ -3999,6 +3999,27 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     case A.5's relaxation exists for, and it is now recorded rather than fixtured, so nobody reading a
     green Stage 4 believes the dob null path was exercised.
 
+89. **The third Makefile/CI divergence, in the channel 3.83 was not built to see.** 3.83 shipped comparing
+    the drift-prone *commands*. Stage 4 introduced `DBT_ER_COMPARISONS`, exported by the Makefile and
+    absent from the workflow — so `make ci` was exit 0 and CI failed **three jobs** on `ER-071`, a message
+    naming an empty var rather than a missing one.
+
+    This is finding 69's shape for the third time, and the lesson is about the gate rather than the
+    mistake: **a parity check scoped to one kind of drift finds one kind of drift.** 3.83 now compares
+    every `DBT_ER_*` the Makefile exports against the workflow's `env:`. The converse is deliberately not
+    required — CI legitimately sets variables a local run has no use for, and demanding symmetry there is
+    the noise that gets a parity check skipped, which is 3.83's own founding lesson.
+
+    **The eventual fix was to delete the channel, not to duplicate it.** Adding the variable to the
+    workflow meant a 3 KB JSON literal in `ci.yml`, which yamllint rejected at 3,068 characters on one
+    line — and folding it was impossible, because one `sql_condition` is 188 characters and splitting
+    inside a string literal would corrupt it. That dead end was the useful signal: sqlfluff and dbt both
+    run with `project_dir = ./integration_tests`, so the **consumer's own `vars:` block** is a channel both
+    already see, which is what M4b says a consumer-supplied value should use anyway. `er_comparisons` is
+    now a native list there, and the Makefile export, the workflow `env:` and the pre-commit hook's extra
+    variable all went away with it. The env-parity arm stays: it is exercised on `DBT_ER_THRESHOLDS`, and
+    the next variable that needs two homes will be caught before CI is.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`
