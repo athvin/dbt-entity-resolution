@@ -75,6 +75,25 @@ _KIND_FIELDS = {
 # The platform triple, `(os, architecture, DuckDB build)`.
 _PLATFORM_KEYS = ("os", "architecture", "duckdb_build")
 
+# §22.1 / 3.59: float-exact artefacts are anchored to linux/amd64, and a
+# baseline minted anywhere else is the wrong artefact -- 3.84 will fail on it in
+# CI and cannot fail on it locally, because there it is correctly ADVISORY.
+#
+# This closes that gap by checking the platform the manifest RECORDS rather than
+# the one the check is running on, so it fires on the machine where the mistake
+# is actually made. D.0 finding 83 was exactly this and was written up at
+# length; finding 90 is the same mistake three PRs later, which is what a rule
+# that lives only in someone's head buys you. Nine manifests had silently
+# reverted to arm64 because ordinary local `gen_baseline.py` runs re-mint every
+# artefact as a side effect of touching one.
+# Scoped to `.parquet`, because §22.1's anchor is about FLOAT results. The
+# captured `.sql` snapshots are Splink's generated text and the sidecar is JSON:
+# neither carries a float whose bits depend on the machine. The model JSON does
+# carry trained floats, but A.4's trained-parameter row compares those by
+# tolerance rather than by bytes, and it is re-minted only under `--refreeze`.
+_NORMATIVE_PLATFORM = {"os": "linux", "architecture": "amd64"}
+_FLOAT_EXACT_SUFFIX = ".parquet"
+
 _SHA256_LEN = 64
 
 
@@ -125,6 +144,27 @@ def _field_errors(name: str, manifest: dict[str, Any], artefact: Path) -> list[s
                 f"on linux/amd64 (G5)."
                 for key in _PLATFORM_KEYS
                 if not platform.get(key)
+            )
+            wrong = [
+                key
+                for key in ("os", "architecture")
+                if platform.get(key) != _NORMATIVE_PLATFORM[key]
+            ]
+            errors.extend(
+                f"{name}: minted on {platform.get('os')}/{platform.get('architecture')}, "
+                f"not {_NORMATIVE_PLATFORM['os']}/{_NORMATIVE_PLATFORM['architecture']}. "
+                f"Float-exact artefacts are anchored to the normative platform "
+                f"(§22.1, 3.59), so this is the wrong artefact -- 3.84 will fail on "
+                f"it in CI and CANNOT fail on it locally, where it is correctly "
+                f"advisory.\n"
+                f"  Re-mint with:\n"
+                f'    docker run --rm --platform linux/amd64 -v "$PWD":/repo -w /repo \\\n'
+                f"      -e PYTHONHASHSEED=0 -e TZ=UTC -e LC_ALL=C python:3.12-slim \\\n"
+                f"      bash -c 'pip install -q splink==4.0.16 duckdb==1.5.5 "
+                f"sqlglot==30.17.0 pandas==3.0.5 && python scripts/gen_baseline.py'\n"
+                f"  An ordinary local `gen_baseline.py` run re-mints EVERY artefact, "
+                f"so touching one reverts them all (D.0 finding 90)."
+                for _ in ([1] if wrong and name.endswith(_FLOAT_EXACT_SUFFIX) else [])
             )
 
     sha = manifest.get("model_json_sha256")

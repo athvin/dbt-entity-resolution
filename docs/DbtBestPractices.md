@@ -4020,6 +4020,24 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     variable all went away with it. The env-parity arm stays: it is exercised on `DBT_ER_THRESHOLDS`, and
     the next variable that needs two homes will be caught before CI is.
 
+90. **Finding 83 again, three PRs later, and the write-up did not prevent it.** Stage 4's two new
+    baselines were minted locally and never re-minted on linux/amd64, so CI failed 3.84 on exactly the
+    artefacts the local run had reported it could not check. Worse than a repeat: **all nine manifests had
+    reverted to `arm64`**, because an ordinary `gen_baseline.py` run re-mints *every* artefact as a side
+    effect of adding one — so each local iteration during Stage 4 silently undid the amd64 mint from
+    #45.
+
+    Finding 83 concluded that *"nothing requires the re-mint when a baseline changes — the obligation
+    lives in my head"*, and then left it there. Recording a lesson is not a mechanism, and this is what
+    the difference costs.
+
+    The obligation is now mechanical, and the trick is what it checks: **3.62 compares the platform the
+    manifest RECORDS against the normative one**, not the platform it is running on. So it fails on the
+    developer's machine, immediately, at the moment the wrong artefact is produced — which is precisely
+    where 3.84 is correctly advisory and therefore silent. Scoped to `.parquet`, because §22.1's anchor is
+    about float results: the captured `.sql` snapshots are text, and A.4's trained-parameter row compares
+    the model JSON by tolerance rather than bytes.
+
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both
 build. Written twice, caught twice by the tests, and on the third script extracted to `scripts/_er_paths.py`
