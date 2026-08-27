@@ -21,6 +21,7 @@ which is §6.1's vacuous pass and the reason `MIN_COMMANDS_COMPARED` exists.
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 from collections.abc import Callable
 
@@ -151,3 +152,45 @@ def test_comparing_nothing_is_not_a_pass(repo: Callable[..., list[str]]) -> None
     """
     errors = repo(lambda t: t.replace("dbt parse", "dbt xparse"), _same)
     assert any("extractor has broken" in e for e in errors)
+
+
+def test_a_variable_exported_only_by_the_makefile_is_caught(
+    repo: Callable[..., list[str]],
+) -> None:
+    """D.0 finding 89 — the third Makefile/CI divergence, in a new channel.
+
+    3.83 shipped comparing drift-prone COMMANDS. Stage 4 introduced
+    `DBT_ER_COMPARISONS`, exported by the Makefile and absent from the workflow,
+    and `make ci` was exit 0 while CI failed three jobs on `ER-071`. A parity
+    check scoped to one kind of drift finds one kind of drift.
+
+    Exercised here on `DBT_ER_THRESHOLDS`, because the variable that prompted it
+    no longer exists: the eventual fix removed the channel rather than
+    duplicating it. The arm it added is what stays.
+    """
+    errors = repo(
+        lambda t: re.sub(r"  DBT_ER_THRESHOLDS: [^\n]*\n", "", t),
+        _same,
+    )
+    assert len(errors) == 1
+    assert "DBT_ER_THRESHOLDS" in errors[0]
+
+
+def test_a_variable_only_ci_sets_is_not_a_divergence(
+    repo: Callable[..., list[str]],
+) -> None:
+    """The converse is deliberately allowed.
+
+    CI legitimately sets variables a local run has no use for -- tokens, runner
+    hints, annotation formats. Requiring symmetry there would be the noise that
+    gets a parity check skipped, which is 3.83's own founding lesson.
+    """
+    assert (
+        repo(
+            lambda t: t.replace(
+                "  DBT_ER_THRESHOLDS:", "  DBT_ER_CI_ONLY: 'x'\n  DBT_ER_THRESHOLDS:"
+            ),
+            _same,
+        )
+        == []
+    )

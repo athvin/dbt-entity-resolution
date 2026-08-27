@@ -71,6 +71,95 @@ vars:
   # Stage 3's rules, as the sidecar publishes them from the VALIDATED model.
   # These are SQL executed with this project's credentials, so the only version
   # that may appear here is one that cleared the section 1.5 trust boundary.
+  # Stage 4's levels, supplied NATIVELY by the consumer rather than through
+  # the environment. `sql_condition` is the raw model's and
+  # `comparison_vector_value` is SPLINK's (A.2 C2), merged by the sidecar --
+  # regenerate with `er_sidecar.py --emit er_comparisons`.
+  #
+  # A native list, not an env var: sqlfluff and dbt both run with
+  # project_dir = ./integration_tests, so this project's own vars: block is
+  # a channel both already see. That removes an export from the Makefile and
+  # an env: from the workflow, and with them a whole class of the divergence
+  # D.0 69 and 89 are both about.
+  er_comparisons:
+    - output_column_name: first_name
+      levels:
+        - sql_condition: "\"first_name_l\" IS NULL OR \"first_name_r\" IS NULL"
+          comparison_vector_value: -1
+        - sql_condition: "\"first_name_l\" = \"first_name_r\""
+          comparison_vector_value: 4
+        - sql_condition: "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.92"
+          comparison_vector_value: 3
+        - sql_condition: "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.88"
+          comparison_vector_value: 2
+        - sql_condition: "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.7"
+          comparison_vector_value: 1
+        - sql_condition: "ELSE"
+          comparison_vector_value: 0
+    - output_column_name: surname
+      levels:
+        - sql_condition: "\"surname_l\" IS NULL OR \"surname_r\" IS NULL"
+          comparison_vector_value: -1
+        - sql_condition: "\"surname_l\" = \"surname_r\""
+          comparison_vector_value: 4
+        - sql_condition: "jaro_winkler_similarity(\"surname_l\", \"surname_r\") >= 0.92"
+          comparison_vector_value: 3
+        - sql_condition: "jaro_winkler_similarity(\"surname_l\", \"surname_r\") >= 0.88"
+          comparison_vector_value: 2
+        - sql_condition: "jaro_winkler_similarity(\"surname_l\", \"surname_r\") >= 0.7"
+          comparison_vector_value: 1
+        - sql_condition: "ELSE"
+          comparison_vector_value: 0
+    - output_column_name: dob
+      levels:
+        - sql_condition: >-
+            try_strptime("dob_l", '%Y-%m-%d') IS NULL OR try_strptime("dob_r", '%Y-%m-%d') IS NULL
+          comparison_vector_value: -1
+        - sql_condition: "\"dob_l\" = \"dob_r\""
+          comparison_vector_value: 5
+        - sql_condition: "damerau_levenshtein(\"dob_l\", \"dob_r\") <= 1"
+          comparison_vector_value: 4
+        - sql_condition: >-
+            ABS(EPOCH(try_strptime("dob_l", '%Y-%m-%d')) - EPOCH(try_strptime("dob_r",
+            '%Y-%m-%d'))) <= 2629800.0
+          comparison_vector_value: 3
+        - sql_condition: >-
+            ABS(EPOCH(try_strptime("dob_l", '%Y-%m-%d')) - EPOCH(try_strptime("dob_r",
+            '%Y-%m-%d'))) <= 31557600.0
+          comparison_vector_value: 2
+        - sql_condition: >-
+            ABS(EPOCH(try_strptime("dob_l", '%Y-%m-%d')) - EPOCH(try_strptime("dob_r",
+            '%Y-%m-%d'))) <= 315576000.0
+          comparison_vector_value: 1
+        - sql_condition: "ELSE"
+          comparison_vector_value: 0
+    - output_column_name: city
+      levels:
+        - sql_condition: "\"city_l\" IS NULL OR \"city_r\" IS NULL"
+          comparison_vector_value: -1
+        - sql_condition: "\"city_l\" = \"city_r\""
+          comparison_vector_value: 1
+        - sql_condition: "ELSE"
+          comparison_vector_value: 0
+    - output_column_name: email
+      levels:
+        - sql_condition: "\"email_l\" IS NULL OR \"email_r\" IS NULL"
+          comparison_vector_value: -1
+        - sql_condition: "\"email_l\" = \"email_r\""
+          comparison_vector_value: 4
+        - sql_condition: >-
+            NULLIF(regexp_extract("email_l", '^[^@]+', 0), '') = NULLIF(regexp_extract("email_r",
+            '^[^@]+', 0), '')
+          comparison_vector_value: 3
+        - sql_condition: "jaro_winkler_similarity(\"email_l\", \"email_r\") >= 0.88"
+          comparison_vector_value: 2
+        - sql_condition: >-
+            jaro_winkler_similarity(NULLIF(regexp_extract("email_l", '^[^@]+', 0), ''),
+            NULLIF(regexp_extract("email_r", '^[^@]+', 0), '')) >= 0.88
+          comparison_vector_value: 1
+        - sql_condition: "ELSE"
+          comparison_vector_value: 0
+
   er_blocking_rules:
     - 'l."first_name" = r."first_name"'
     - 'l."surname" = r."surname"'

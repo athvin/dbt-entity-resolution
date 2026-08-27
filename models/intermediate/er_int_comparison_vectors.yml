@@ -1,0 +1,287 @@
+---
+version: 2
+
+models:
+  - name: er_int_comparison_vectors
+    description: >
+      **Purpose**. Stage 4: the gamma each comparison assigns to every candidate
+      pair. Splink's `__splink__df_comparison_vectors`. This is the last stage
+      before scoring, and the only one whose output is observable -- a wrong
+      gamma NUMBERING is self-consistent downstream (the gamma CASE and the bf
+      CASE come from the same counter), so match weight, probability, edges and
+      clusters would all be *correct* under it. The gamma column is the sole
+      place the error shows.
+
+
+      **Grain**. One row per `(unique_id_l, unique_id_r, match_key)` -- the same
+      grain as `er_int_candidate_pairs`, which this model neither widens nor
+      narrows. The term-frequency joins are LEFT and matched on a unique
+      `(column_name, value)` key, so they cannot multiply rows.
+
+
+      **Upstream**. `er_int_candidate_pairs` for the pairs and `er_stg_input`
+      twice for the two sides. Term frequencies are NOT carried: they belong to
+      scoring, and Stage 5 joins `er_tf_all` for itself rather than paying eight
+      DOUBLEs per row here. The levels
+      arrive as `er_comparisons`, merged by the sidecar from the raw model's
+      `sql_condition` and Splink's own `comparison_vector_value` (A.2 C2: the
+      latter cannot be inferred from list position).
+
+
+      **Splink parity**. 100% gamma equality against
+      `fixtures/baselines/fake_1000/comparison_vectors.parquet`, captured from
+      Splink's own `compute_comparison_vector_values_from_id_pairs_sqls` --
+      comparison vectors and nothing else, so a Stage 4 failure cannot be masked
+      by a Stage 5 change. The column set is Splink's exactly: 26 columns, and
+      NOT the ground-truth `cluster`. The oracle is WIDE and this model is
+      NARROW by default (D11 rec 3 / 3.53: 946 B/pair against 69.4 measured, and
+      `er_max_pairs` is derived from the narrow figure), so the comparison is on
+      the gammas -- which is exactly what the acceptance criterion asks for.
+      `er_retain_matching_columns: true` adds the `_l`/`_r` passthrough as a
+      debug variant. This is also where Splink renames `join_key_*` to
+      `unique_id_*`, and so does this model.
+
+
+      **Determinism**. Joins and CASE expressions: no ordering, no aggregation,
+      no floating-point arithmetic. The `tf_*` values are read from a frozen
+      snapshot rather than computed, so they do not vary with what else is in
+      the corpus (D7a).
+
+
+      **Caveats**. Levels render in **exact JSON list order** -- not sorted, not
+      highest-first, and the null level is not hoisted. §3.3's `[v1 ERROR]`
+      records the opposite belief; the order only looks descending because
+      Splink's own creators write it that way. The ELSE level is identified by
+      its `sql_condition` sentinel and never by `comparison_vector_value == 0`.
+      Transforms live INLINE in the CASE and never upstream (D8) -- the
+      projection selects RAW columns, so hoisting a `lower()` into
+      `er_stg_input` would apply it twice.
+
+    config:
+      contract:
+        enforced: true
+      tags: ["parity_stage_4"]
+      meta:
+        primary_key_by_test_reason: >
+          Pair grain: a composite VARCHAR PK over
+          (unique_id_l, unique_id_r, match_key) costs ~100x the test and builds
+          a multi-GiB ART index. Held by
+          dbt_utils.unique_combination_of_columns.
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - unique_id_l
+              - unique_id_r
+              - match_key
+
+    columns:
+      - name: unique_id_l
+        data_type: varchar
+        description: >
+          The left record's id. Renamed from `join_key_l` here, which is where
+          Splink renames it too.
+        constraints:
+          - type: not_null
+      - name: unique_id_r
+        data_type: varchar
+        description: >
+          The right record's id, strictly greater than `unique_id_l` as text.
+        constraints:
+          - type: not_null
+      - name: match_key
+        data_type: varchar
+        description: >
+          The blocking rule that generated this pair, carried through from
+          Stage 3 unchanged and still VARCHAR (A.4).
+        constraints:
+          - type: not_null
+      - name: gamma_first_name
+        data_type: integer
+        description: >
+          The comparison vector value `first_name` assigns this pair. Resolved by
+          Splink (A.2 C2), never inferred from level position.
+        constraints:
+          - type: not_null
+      - name: gamma_surname
+        data_type: integer
+        description: >
+          The comparison vector value `surname` assigns this pair. Resolved by
+          Splink (A.2 C2), never inferred from level position.
+        constraints:
+          - type: not_null
+      - name: gamma_dob
+        data_type: integer
+        description: >
+          The comparison vector value `dob` assigns this pair. Resolved by
+          Splink (A.2 C2), never inferred from level position.
+        constraints:
+          - type: not_null
+      - name: gamma_city
+        data_type: integer
+        description: >
+          The comparison vector value `city` assigns this pair. Resolved by
+          Splink (A.2 C2), never inferred from level position.
+        constraints:
+          - type: not_null
+      - name: gamma_email
+        data_type: integer
+        description: >
+          The comparison vector value `email` assigns this pair. Resolved by
+          Splink (A.2 C2), never inferred from level position.
+        constraints:
+          - type: not_null
+
+unit_tests:
+  - name: comparison_vectors_render_levels_in_exact_json_order
+    description: >
+      §3.3's `[v1 ERROR]`, pinned. Levels are emitted in exact JSON list order:
+      not sorted, not highest-first, and the null level is not hoisted. The
+      order only LOOKS descending because Splink's own creators write it that
+      way, and a model that reordered them would score differently with no error.
+
+
+      `city`'s levels are INVERTED for this fixture -- the null level is second,
+      not first -- so a hoisting implementation gives the NULL pair a different
+      gamma and this test fails. It also pins that the ELSE level is found by
+      its `sql_condition` sentinel and never by `comparison_vector_value == 0`:
+      here ELSE carries **7**.
+
+
+      The other four comparisons are the real ones, unchanged, because the
+      contract declares five gamma columns and a unit test that emitted fewer
+      would fail on the contract rather than on the property under test.
+
+
+      Their expected gammas are **4** for `dob` and **2** for `email`, not 0,
+      and that is not an ELSE value -- the two dates are a year apart and hit
+      `DateOfBirthComparison`'s within-one-year level, and the two addresses
+      share a domain. Guessing 0 for "the records differ" is the naive reading
+      this fixture exists to correct: a comparison has levels between exact and
+      nothing, and treating gamma 0 as "no match" is how a wrong numbering gets
+      believed.
+    model: er_int_comparison_vectors
+    overrides:
+      vars:
+        er_comparisons:
+          - output_column_name: first_name
+            levels:
+              - sql_condition: "\"first_name_l\" IS NULL OR \"first_name_r\" IS NULL"
+                comparison_vector_value: -1
+              - sql_condition: "\"first_name_l\" = \"first_name_r\""
+                comparison_vector_value: 4
+              - sql_condition: "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.92"
+                comparison_vector_value: 3
+              - sql_condition: "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.88"
+                comparison_vector_value: 2
+              - sql_condition: "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.7"
+                comparison_vector_value: 1
+              - sql_condition: "ELSE"
+                comparison_vector_value: 0
+          - output_column_name: surname
+            levels:
+              - sql_condition: "\"surname_l\" IS NULL OR \"surname_r\" IS NULL"
+                comparison_vector_value: -1
+              - sql_condition: "\"surname_l\" = \"surname_r\""
+                comparison_vector_value: 4
+              - sql_condition: "jaro_winkler_similarity(\"surname_l\", \"surname_r\") >= 0.92"
+                comparison_vector_value: 3
+              - sql_condition: "jaro_winkler_similarity(\"surname_l\", \"surname_r\") >= 0.88"
+                comparison_vector_value: 2
+              - sql_condition: "jaro_winkler_similarity(\"surname_l\", \"surname_r\") >= 0.7"
+                comparison_vector_value: 1
+              - sql_condition: "ELSE"
+                comparison_vector_value: 0
+          - output_column_name: dob
+            levels:
+              - sql_condition: >-
+                  try_strptime("dob_l", '%Y-%m-%d') IS NULL OR try_strptime("dob_r", '%Y-%m-%d') IS
+                  NULL
+                comparison_vector_value: -1
+              - sql_condition: "\"dob_l\" = \"dob_r\""
+                comparison_vector_value: 5
+              - sql_condition: "damerau_levenshtein(\"dob_l\", \"dob_r\") <= 1"
+                comparison_vector_value: 4
+              - sql_condition: >-
+                  ABS(EPOCH(try_strptime("dob_l", '%Y-%m-%d')) - EPOCH(try_strptime("dob_r",
+                  '%Y-%m-%d'))) <= 2629800.0
+                comparison_vector_value: 3
+              - sql_condition: >-
+                  ABS(EPOCH(try_strptime("dob_l", '%Y-%m-%d')) - EPOCH(try_strptime("dob_r",
+                  '%Y-%m-%d'))) <= 31557600.0
+                comparison_vector_value: 2
+              - sql_condition: >-
+                  ABS(EPOCH(try_strptime("dob_l", '%Y-%m-%d')) - EPOCH(try_strptime("dob_r",
+                  '%Y-%m-%d'))) <= 315576000.0
+                comparison_vector_value: 1
+              - sql_condition: "ELSE"
+                comparison_vector_value: 0
+          - output_column_name: city
+            levels:
+              - sql_condition: "\"city_l\" = \"city_r\""
+                comparison_vector_value: 3
+              - sql_condition: "\"city_l\" IS NULL OR \"city_r\" IS NULL"
+                comparison_vector_value: -1
+              - sql_condition: "ELSE"
+                comparison_vector_value: 7
+          - output_column_name: email
+            levels:
+              - sql_condition: "\"email_l\" IS NULL OR \"email_r\" IS NULL"
+                comparison_vector_value: -1
+              - sql_condition: "\"email_l\" = \"email_r\""
+                comparison_vector_value: 4
+              - sql_condition: >-
+                  NULLIF(regexp_extract("email_l", '^[^@]+', 0), '') =
+                  NULLIF(regexp_extract("email_r", '^[^@]+', 0), '')
+                comparison_vector_value: 3
+              - sql_condition: "jaro_winkler_similarity(\"email_l\", \"email_r\") >= 0.88"
+                comparison_vector_value: 2
+              - sql_condition: >-
+                  jaro_winkler_similarity(NULLIF(regexp_extract("email_l", '^[^@]+', 0), ''),
+                  NULLIF(regexp_extract("email_r", '^[^@]+', 0), '')) >= 0.88
+                comparison_vector_value: 1
+              - sql_condition: "ELSE"
+                comparison_vector_value: 0
+    given:
+      - input: ref('er_int_candidate_pairs')
+        format: sql
+        rows: |
+          select cast('0' as varchar) as match_key,
+                 cast('a' as varchar) as join_key_l,
+                 cast('b' as varchar) as join_key_r
+          union all
+          select cast('0' as varchar), cast('a' as varchar), cast('c' as varchar)
+      - input: ref('er_stg_input')
+        format: sql
+        rows: |
+          select cast('a' as varchar) as unique_id,
+                 cast('Ann' as varchar) as first_name,
+                 cast('Shah' as varchar) as surname,
+                 cast('1990-01-01' as varchar) as dob,
+                 cast('Leeds' as varchar) as city,
+                 cast('a@x.invalid' as varchar) as email,
+                 cast('c1' as varchar) as cluster
+          union all
+          select cast('b' as varchar), cast('Bo' as varchar), cast('Lee' as varchar),
+                 cast('1991-01-01' as varchar), cast('Leeds' as varchar),
+                 cast('b@x.invalid' as varchar), cast('c1' as varchar)
+          union all
+          select cast('c' as varchar), cast('Cy' as varchar), cast('Ng' as varchar),
+                 cast('1992-01-01' as varchar), cast(null as varchar),
+                 cast('c@x.invalid' as varchar), cast('c2' as varchar)
+    expect:
+      format: sql
+      rows: |
+        select cast('a' as varchar) as unique_id_l,
+               cast('b' as varchar) as unique_id_r,
+               cast('0' as varchar) as match_key,
+               cast(0 as integer) as gamma_first_name,
+               cast(0 as integer) as gamma_surname,
+               cast(4 as integer) as gamma_dob,
+               cast(3 as integer) as gamma_city,
+               cast(2 as integer) as gamma_email
+        union all
+        select cast('a' as varchar), cast('c' as varchar), cast('0' as varchar),
+               cast(0 as integer), cast(0 as integer), cast(4 as integer),
+               cast(-1 as integer), cast(2 as integer)

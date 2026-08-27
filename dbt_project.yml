@@ -87,6 +87,18 @@ vars:
   # rather than silently generating the full cross product.
   er_blocking_rules: []
 
+  # Stage 4's comparison levels, merged by the sidecar: `sql_condition` from the
+  # raw model and `comparison_vector_value` from SPLINK, because A.2 C2 is
+  # explicit that the latter cannot be inferred from list position.
+  #
+  # A JSON STRING through the environment, for §9's reason: sqlfluff has no
+  # --vars and dbt renders a Jinja-bearing vars: value to a string, so this is
+  # the only channel both dbt and the linter can see. A native list is accepted
+  # too, exactly as er_thresholds does.
+  #   export DBT_ER_COMPARISONS="$(uv run python scripts/er_sidecar.py \
+  #       fixtures/model_jsons/fake_1000_v1.json --emit er_comparisons)"
+  er_comparisons: "{{ env_var('DBT_ER_COMPARISONS', '[]') }}"
+
   # D7a -- term frequency is FROZEN BY SNAPSHOT. `frozen` is the default and the
   # mode every parity and production run uses; `refresh` recomputes from the live
   # corpus and exists ONLY to mint a snapshot. Recomputing on every run would

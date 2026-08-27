@@ -67,6 +67,21 @@ DRIFT_PRONE = (
 # full coverage is indistinguishable from no threshold on the day it matters.
 MIN_COMMANDS_COMPARED = len(DRIFT_PRONE)
 
+# The ENVIRONMENT is the other half, and it took a third divergence to add it.
+#
+# 3.83 shipped comparing the drift-prone COMMANDS. Stage 4 then introduced
+# `DBT_ER_COMPARISONS`, exported by the Makefile and absent from the workflow --
+# so `make ci` was exit 0 and CI failed three jobs on `ER-071`, which is finding
+# 69's shape exactly, in a channel this check was not built to look at (D.0
+# finding 89). A parity check scoped to one kind of drift finds one kind of
+# drift.
+#
+# Every `DBT_ER_*` the Makefile exports must also reach the workflow. The
+# converse is deliberately NOT required: CI legitimately sets variables a local
+# run has no use for.
+_MAKE_EXPORT = re.compile(r"^export\s+(DBT_ER_\w+)\s*\??=", re.MULTILINE)
+_WORKFLOW_ENV = re.compile(r"^\s{2,}(DBT_ER_\w+)\s*:", re.MULTILINE)
+
 # `Makefile` writes these as variables; the workflow writes them out.
 MAKE_VARIABLES = {
     "$(DBT)": "uv run dbt",
@@ -169,6 +184,17 @@ def check(root: Path = ROOT) -> list[str]:
                 f"incomplete (D.0 finding 69)."
             )
 
+    exported = set(_MAKE_EXPORT.findall(makefile_text))
+    in_workflow_env = set(_WORKFLOW_ENV.findall(workflow_text))
+    errors.extend(
+        f"`{name}` is exported by {MAKEFILE} and never set in {WORKFLOW}.\n"
+        f"  Every job that needs it will see the package default instead, which "
+        f"for these vars is an empty value that raises rather than builds -- so "
+        f"`make ci` passes locally and CI fails somewhere that does not name the "
+        f"missing variable (D.0 finding 89)."
+        for name in sorted(exported - in_workflow_env)
+    )
+
     if compared < MIN_COMMANDS_COMPARED:
         errors.append(
             f"only {compared} of {MIN_COMMANDS_COMPARED} drift-prone commands were "
@@ -180,7 +206,9 @@ def check(root: Path = ROOT) -> list[str]:
             f"DRIFT_PRONE in the same PR, so the narrowing is reviewed."
         )
 
-    sys.stdout.write(f"3.83: {compared} shared command(s) compared.\n")
+    sys.stdout.write(
+        f"3.83: {compared} shared command(s) and {len(exported)} exported variable(s) compared.\n"
+    )
     return errors
 
 

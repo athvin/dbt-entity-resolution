@@ -455,6 +455,33 @@ def build(raw: str, bounds: dict[str, int] | None = None) -> dict[str, Any]:
         # interpolated into `er_blocking_sql` and executed with the consumer's
         # credentials, so the only version that may leave this module is the one
         # that cleared §1.5 (D.0 finding 81).
+        # Stage 4 consumes this. The gamma CASE needs BOTH halves and they live
+        # in different places: `sql_condition` is the raw model's, and
+        # `comparison_vector_value` is SPLINK's -- A.2 C2 is explicit that it
+        # cannot be inferred from list position. Merging them here, once, is
+        # what stops every consumer doing it in Jinja and getting it subtly
+        # different (M2's drift, applied to structure rather than to columns).
+        "er_comparisons": [
+            {
+                "output_column_name": str(comparison["output_column_name"]).replace(" ", "_"),
+                "levels": [
+                    {
+                        "sql_condition": raw_level.get("sql_condition"),
+                        "comparison_vector_value": level["comparison_vector_value"],
+                    }
+                    for raw_level, level in zip(
+                        raw_comparison.get("comparison_levels") or [],
+                        comparison["levels"],
+                        strict=True,
+                    )
+                ],
+            }
+            for raw_comparison, comparison in zip(
+                validated["model"].get("comparisons") or [],
+                resolve(validated["model"])["comparisons"],
+                strict=True,
+            )
+        ],
         "er_blocking_rules": [
             condition for _, condition in _blocking_rules(validated["model"]) if condition
         ],
@@ -725,7 +752,9 @@ def _safely(call: Any) -> Any:
         return None
 
 
-def main() -> int:
+def main() -> int:  # noqa: PLR0911 -- one return per CLI mode; a dispatch
+    # table would hide which mode produced which exit code, and this script's
+    # exit codes are its contract (§1.5 rule 5).
     """Validate a model JSON and emit the sidecar artefact."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model_json", type=Path)
@@ -736,6 +765,17 @@ def main() -> int:
         help="write the resolved sidecar artefact here (A.2's committed, hashed file)",
     )
     parser.add_argument(
+        "--emit",
+        metavar="KEY",
+        default=None,
+        help=(
+            "print one top-level key of the artefact as compact JSON, for a "
+            "Makefile or workflow to export into the environment. §9's route: "
+            "sqlfluff has no --vars and dbt renders a Jinja-bearing vars: value "
+            "to a string, so the environment is the only channel both can see."
+        ),
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="regenerate and compare byte-for-byte against --out, without writing",
@@ -744,7 +784,7 @@ def main() -> int:
 
     raw = args.model_json.read_text(encoding="utf-8")
     try:
-        artefact = build(raw) if (args.out or args.check) else validate(raw)
+        artefact = build(raw) if (args.out or args.check or args.emit) else validate(raw)
     except ValidationError as err:
         for finding in err.findings:
             sys.stderr.write(f"ERROR: {finding}\n")
@@ -753,6 +793,18 @@ def main() -> int:
             f"and will not build (§1.5 rule 5).\n"
         )
         return 1
+
+    if args.emit:
+        # Nothing else is printed: the caller is a `$(shell ...)` and anything
+        # on stdout becomes part of the exported value.
+        if args.emit not in artefact:
+            sys.stderr.write(
+                f"ERROR: --emit {args.emit!r} is not a key of the sidecar artefact. "
+                f"Available: {', '.join(sorted(artefact))}.\n"
+            )
+            return 1
+        sys.stdout.write(json.dumps(artefact[args.emit], separators=(",", ":")))
+        return 0
 
     sys.stdout.write(
         f"validated {rel(args.model_json, ROOT)}: "

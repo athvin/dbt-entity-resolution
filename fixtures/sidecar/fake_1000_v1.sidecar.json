@@ -45,6 +45,145 @@
     "l.\"dob\" = r.\"dob\"",
     "l.\"email\" = r.\"email\""
   ],
+  "er_comparisons": [
+    {
+      "levels": [
+        {
+          "comparison_vector_value": -1,
+          "sql_condition": "\"first_name_l\" IS NULL OR \"first_name_r\" IS NULL"
+        },
+        {
+          "comparison_vector_value": 4,
+          "sql_condition": "\"first_name_l\" = \"first_name_r\""
+        },
+        {
+          "comparison_vector_value": 3,
+          "sql_condition": "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.92"
+        },
+        {
+          "comparison_vector_value": 2,
+          "sql_condition": "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.88"
+        },
+        {
+          "comparison_vector_value": 1,
+          "sql_condition": "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.7"
+        },
+        {
+          "comparison_vector_value": 0,
+          "sql_condition": "ELSE"
+        }
+      ],
+      "output_column_name": "first_name"
+    },
+    {
+      "levels": [
+        {
+          "comparison_vector_value": -1,
+          "sql_condition": "\"surname_l\" IS NULL OR \"surname_r\" IS NULL"
+        },
+        {
+          "comparison_vector_value": 4,
+          "sql_condition": "\"surname_l\" = \"surname_r\""
+        },
+        {
+          "comparison_vector_value": 3,
+          "sql_condition": "jaro_winkler_similarity(\"surname_l\", \"surname_r\") >= 0.92"
+        },
+        {
+          "comparison_vector_value": 2,
+          "sql_condition": "jaro_winkler_similarity(\"surname_l\", \"surname_r\") >= 0.88"
+        },
+        {
+          "comparison_vector_value": 1,
+          "sql_condition": "jaro_winkler_similarity(\"surname_l\", \"surname_r\") >= 0.7"
+        },
+        {
+          "comparison_vector_value": 0,
+          "sql_condition": "ELSE"
+        }
+      ],
+      "output_column_name": "surname"
+    },
+    {
+      "levels": [
+        {
+          "comparison_vector_value": -1,
+          "sql_condition": "try_strptime(\"dob_l\", '%Y-%m-%d') IS NULL OR try_strptime(\"dob_r\", '%Y-%m-%d') IS NULL"
+        },
+        {
+          "comparison_vector_value": 5,
+          "sql_condition": "\"dob_l\" = \"dob_r\""
+        },
+        {
+          "comparison_vector_value": 4,
+          "sql_condition": "damerau_levenshtein(\"dob_l\", \"dob_r\") <= 1"
+        },
+        {
+          "comparison_vector_value": 3,
+          "sql_condition": "ABS(EPOCH(try_strptime(\"dob_l\", '%Y-%m-%d')) - EPOCH(try_strptime(\"dob_r\", '%Y-%m-%d'))) <= 2629800.0"
+        },
+        {
+          "comparison_vector_value": 2,
+          "sql_condition": "ABS(EPOCH(try_strptime(\"dob_l\", '%Y-%m-%d')) - EPOCH(try_strptime(\"dob_r\", '%Y-%m-%d'))) <= 31557600.0"
+        },
+        {
+          "comparison_vector_value": 1,
+          "sql_condition": "ABS(EPOCH(try_strptime(\"dob_l\", '%Y-%m-%d')) - EPOCH(try_strptime(\"dob_r\", '%Y-%m-%d'))) <= 315576000.0"
+        },
+        {
+          "comparison_vector_value": 0,
+          "sql_condition": "ELSE"
+        }
+      ],
+      "output_column_name": "dob"
+    },
+    {
+      "levels": [
+        {
+          "comparison_vector_value": -1,
+          "sql_condition": "\"city_l\" IS NULL OR \"city_r\" IS NULL"
+        },
+        {
+          "comparison_vector_value": 1,
+          "sql_condition": "\"city_l\" = \"city_r\""
+        },
+        {
+          "comparison_vector_value": 0,
+          "sql_condition": "ELSE"
+        }
+      ],
+      "output_column_name": "city"
+    },
+    {
+      "levels": [
+        {
+          "comparison_vector_value": -1,
+          "sql_condition": "\"email_l\" IS NULL OR \"email_r\" IS NULL"
+        },
+        {
+          "comparison_vector_value": 4,
+          "sql_condition": "\"email_l\" = \"email_r\""
+        },
+        {
+          "comparison_vector_value": 3,
+          "sql_condition": "NULLIF(regexp_extract(\"email_l\", '^[^@]+', 0), '') = NULLIF(regexp_extract(\"email_r\", '^[^@]+', 0), '')"
+        },
+        {
+          "comparison_vector_value": 2,
+          "sql_condition": "jaro_winkler_similarity(\"email_l\", \"email_r\") >= 0.88"
+        },
+        {
+          "comparison_vector_value": 1,
+          "sql_condition": "jaro_winkler_similarity(NULLIF(regexp_extract(\"email_l\", '^[^@]+', 0), ''), NULLIF(regexp_extract(\"email_r\", '^[^@]+', 0), '')) >= 0.88"
+        },
+        {
+          "comparison_vector_value": 0,
+          "sql_condition": "ELSE"
+        }
+      ],
+      "output_column_name": "email"
+    }
+  ],
   "er_gamma_columns": [
     {
       "data_type": "INTEGER",
