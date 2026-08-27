@@ -188,8 +188,14 @@
       {#- ---- 3.53: the column budget (RC49 item 9) ----------------------
           D11 rec 3: the wide `_l`/`_r` passthrough variant is opt-in per run
           and NEVER the default. 946 B/pair against 69.4 measured. -#}
+      {#- The pair KEY ends in `_l`/`_r` too, and it is not passthrough -- it is
+          the grain. Flagging it made every Stage 4 model unbuildable, and the
+          fix that first suggests itself is `er_retain_matching_columns: true`,
+          which silently commits the project to the 946 B/pair wide shape and
+          the capacity budget derived from 69.4 (D.0 finding 86). -#}
+      {%- set pair_key = ['unique_id_l', 'unique_id_r'] -%}
       {%- if name in pair_grain and not retain_lr -%}
-        {%- for col_name in columns.keys() -%}
+        {%- for col_name in columns.keys() if col_name not in pair_key -%}
           {%- if col_name.endswith('_l') or col_name.endswith('_r') -%}
             {%- do violations.append(
               name ~ "." ~ col_name ~ ": `_l`/`_r` passthrough column on a "

@@ -387,6 +387,64 @@ def _blocked_pairs_frame(linker: Any) -> pd.DataFrame:
     return frame
 
 
+def _comparison_vectors_frame(linker: Any) -> pd.DataFrame:
+    """Splink's own comparison-vector table -- Stage 4's oracle.
+
+    Captured from `compute_comparison_vector_values_from_id_pairs_sqls` for the
+    same reason `_blocked_pairs_frame` is captured rather than derived: it
+    contains gammas and the columns feeding them, and nothing from scoring. A
+    Stage 4 failure therefore cannot be masked or manufactured by a Stage 5
+    change, and `predictions.parquet` -- which happens to carry the same gammas
+    today -- would tie the two together for no reason beyond convenience.
+
+    **This is where Splink renames `join_key_l`/`join_key_r` to
+    `unique_id_l`/`unique_id_r`**, and the package follows it here rather than
+    at Stage 3, so the two agree column-for-column at every stage boundary.
+    """
+    from splink.internals.blocking import block_using_rules_sqls  # noqa: PLC0415
+    from splink.internals.comparison_vector_values import (  # noqa: PLC0415
+        compute_comparison_vector_values_from_id_pairs_sqls,
+    )
+    from splink.internals.pipeline import CTEPipeline  # noqa: PLC0415
+    from splink.internals.vertically_concatenate import (  # noqa: PLC0415
+        compute_df_concat_with_tf,
+    )
+
+    settings = linker._settings_obj  # noqa: SLF001
+    concat = compute_df_concat_with_tf(linker, CTEPipeline())
+    pipeline = CTEPipeline([concat])
+    pipeline.enqueue_list_of_sqls(
+        block_using_rules_sqls(
+            input_tablename_l=concat.physical_name,
+            input_tablename_r=concat.physical_name,
+            blocking_rules=settings._blocking_rules_to_generate_predictions,  # noqa: SLF001
+            link_type=settings._link_type,  # noqa: SLF001
+            source_dataset_input_column=settings.column_info_settings.source_dataset_input_column,
+            unique_id_input_column=settings.column_info_settings.unique_id_input_column,
+        )
+    )
+    pipeline.enqueue_list_of_sqls(
+        compute_comparison_vector_values_from_id_pairs_sqls(
+            settings._columns_to_select_for_blocking,  # noqa: SLF001
+            settings._columns_to_select_for_comparison_vector_values,  # noqa: SLF001
+            input_tablename_l=concat.physical_name,
+            input_tablename_r=concat.physical_name,
+            source_dataset_input_column=settings.column_info_settings.source_dataset_input_column,
+            unique_id_input_column=settings.column_info_settings.unique_id_input_column,
+        )
+    )
+    frame = linker._db_api.sql_pipeline_to_splink_dataframe(  # noqa: SLF001
+        pipeline
+    ).as_pandas_dataframe()
+    if frame.empty:
+        msg = (
+            "Splink produced no comparison vectors, so Stage 4 has no oracle. "
+            "An empty table makes every gamma assertion vacuously true (§6.1)."
+        )
+        raise RuntimeError(msg)
+    return frame
+
+
 def _accuracy_frame(linker: Any) -> pd.DataFrame:
     """Splink's own `accuracy_analysis_from_labels_column`, swept and whole.
 
@@ -444,8 +502,14 @@ def _accuracy_frame(linker: Any) -> pd.DataFrame:
     return frame
 
 
-def generate(
-    fixture: Path, out_dir: Path, model_json: Path, *, refreeze: bool = False
+def generate(  # noqa: PLR0915 -- one linear block per frozen artefact. Splitting
+    # it would scatter the ORDER these are minted in, which matters: the concat
+    # table is computed once and reused by three of them.
+    fixture: Path,
+    out_dir: Path,
+    model_json: Path,
+    *,
+    refreeze: bool = False,
 ) -> list[Path]:
     """Generate every baseline for one fixture. Returns the files written.
 
@@ -557,6 +621,10 @@ def generate(
     blocked_path = out_dir / "blocked_pairs.parquet"
     _write_parquet(_blocked_pairs_frame(linker), blocked_path)
     written.append(blocked_path)
+
+    vectors_path = out_dir / "comparison_vectors.parquet"
+    _write_parquet(_comparison_vectors_frame(linker), vectors_path)
+    written.append(vectors_path)
 
     accuracy_path = out_dir / "accuracy_analysis.parquet"
     _write_parquet(_accuracy_frame(linker), accuracy_path)

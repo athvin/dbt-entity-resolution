@@ -71,6 +71,10 @@ vars:
   # Stage 3's rules, as the sidecar publishes them from the VALIDATED model.
   # These are SQL executed with this project's credentials, so the only version
   # that may appear here is one that cleared the section 1.5 trust boundary.
+  # Stage 4's levels, from the committed sidecar (A.2 C2 -- the vector values
+  # are Splink's). Supplied through the environment for section 9's reason.
+  er_comparisons: "{{ env_var('DBT_ER_COMPARISONS', '[]') }}"
+
   er_blocking_rules:
     - 'l."first_name" = r."first_name"'
     - 'l."surname" = r."surname"'

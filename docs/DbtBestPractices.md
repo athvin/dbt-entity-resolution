@@ -3943,6 +3943,16 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     run because they were not installed, and installing them would have failed because they could not run.
     Every entry is now `uv run …`, which resolves in both contexts.
 
+    **The sweep that fixed them was itself incomplete, in the same way.** It rewrote every
+    `entry: python …` and missed `sqlfluff`, which reaches the shell through a `bash -c` inside a folded
+    scalar. That hook stayed broken for three more commits without showing it: the files it lints are
+    `.sql`, so every docs- or Python-only commit reported `(no files to check) Skipped`. It failed with
+    `exit code: 127` on the first commit to touch a model — finding 85 repeating at one remove, concealed
+    by a file filter rather than by a wrapper. And once it could run, it failed again at `exit code: 2`,
+    because its `bash -c` exports `DBT_ER_THRESHOLDS` and not `DBT_ER_COMPARISONS`, so the model it lints
+    raised `ER-071` under the hook and nowhere else. Three layers of the same defect: a thing that works in
+    the one context anybody exercised.
+
     **The last of the thirteen took three attempts, for the same reason twice.** Its entry is a folded
     scalar — `entry: >-` — so `python` begins on the *next* line, and two successive string replacements
     aimed at `entry: python ` and `entry: >` both missed it. Throughout,
@@ -3950,6 +3960,44 @@ published ref. A job asserting nothing is worse than a job that does not exist, 
     `python` resolves: the identical blind spot that caused the finding, reproduced while fixing it. Only
     an actual `git commit` could tell the truth, and only after 84 was closed could an actual `git commit`
     run the hooks at all.
+
+86. **3.53 flagged the pair key as passthrough, which made every Stage 4 model unbuildable.** The check
+    walks a pair-grain model's columns and rejects anything ending `_l`/`_r` unless
+    `er_retain_matching_columns` is set. `unique_id_l` and `unique_id_r` end `_l`/`_r` **and are the
+    grain** — they are the very key the accompanying `unique_combination_of_columns` test asserts on. So
+    the standard rejected a model for carrying the only columns it cannot omit.
+
+    The dangerous part is the repair it invites. Setting `er_retain_matching_columns: true` clears every
+    violation at once and silently commits the project to the **wide** shape — 267.9 B/pair against 69.4
+    narrow (D11's table), against an `er_max_pairs` budget derived from the narrow figure. A one-line
+    config change to make a gate green, costing 3.9× the memory the capacity model assumes. Fixed by
+    exempting the pair key by name; the passthrough rule is otherwise untouched.
+
+87. **The gamma conditions cannot resolve against the shape D11 requires, and the way out was a DuckDB
+    feature rather than a compromise.** D11 rec 3 is explicit: *"`int_comparison_vectors` carries
+    `unique_id_l`, `unique_id_r`, `match_key`, and the `gamma_*` columns only."* But Splink's level
+    conditions arrive verbatim naming `"city_l"` and `"city_r"`, and the obvious way to make those resolve
+    is `select l."city" as "city_l"` — which is exactly the passthrough that shape forbids. Neither a
+    subquery nor a CTE is available (`forbid_subquery_in = both`, plus dbt-bouncer's leading-`with` rule).
+
+    Three bad options and one good one. Rewriting the conditions to `l."city" = r."city"` would mean the
+    package executes a *translation* of Splink's conditions rather than Splink's conditions, in the stage
+    whose whole claim is that it does not. `FROM tbl AS alias(col, ...)` renames columns in the FROM
+    clause, so the conditions resolve against names nothing selects. `[RUN]` confirmed DuckDB supports it.
+    The alias list is positional and must match `er_stg_input`'s column order — a drift there is a
+    wrong-column error at build time, not a silent mis-comparison.
+
+88. **A fixed epsilon cannot probe a boundary, and the test that used one passed while testing nothing.**
+    Stage 4's AC requires a fixture either side of every reachable threshold constant, to catch `>` against
+    `>=`. Probing with `value ± 1e-9` works for `0.92` and is a **no-op** for `31557600.0`, whose ULP is
+    ~3.7e-9: `31557600.0 + 1e-9 <= 31557600.0` evaluates TRUE, so "above the boundary" was not above it.
+    The probe reported the operator behaving correctly because it never left the boundary. `math.nextafter`
+    is the smallest step that exists at every magnitude, which is what "either side" has to mean.
+
+    Separately, and as designed: `dob`'s null level is **unreachable** on this corpus — zero null `dob`
+    values, zero unparseable, and Splink's own oracle emits `gamma_dob` in [0..5] and never -1. That is the
+    case A.5's relaxation exists for, and it is now recorded rather than fixtured, so nobody reading a
+    green Stage 4 believes the dob null path was exercised.
 
 **The third recurrence of one bug produced a shared helper.** `relative_to(ROOT)` raises when a scanned
 tree is outside the repository — which is what 3.57's tests and `verify_gates.py`'s scratch copies both

@@ -210,7 +210,9 @@ repos:
         name: "sqlfluff lint (duckdb + dbt templater)"
         entry: >-
           bash -c 'DBT_ER_THRESHOLDS="[{\"auto_merge\":0.9}]"
-          sqlfluff lint --processes 0 --disable-progress-bar
+          DBT_ER_COMPARISONS="$(uv run python scripts/er_sidecar.py
+          fixtures/model_jsons/fake_1000_v1.json --emit er_comparisons)"
+          uv run sqlfluff lint --processes 0 --disable-progress-bar
           integration_tests/dbt_packages/dbt_er/models'
         language: system
         types: [sql]
